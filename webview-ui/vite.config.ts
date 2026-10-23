@@ -9,5 +9,5 @@ export default defineConfig({
     target: 'es2022',
     rollupOptions: { output: { entryFileNames: 'main.js', assetFileNames: '[name][extname]', inlineDynamicImports: true } },
   },
-  test: { include: ['src/**/*.test.ts'], environment: 'node' },
+  test: { include: ['tests/**/*.test.ts'], environment: 'node' },
 });

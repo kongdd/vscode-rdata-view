@@ -4,14 +4,27 @@
   import DatasetStatsPanel from './DatasetStatsPanel.svelte';
   let columns = $state(false);
   let stats = $state(false);
+  let rowNumber = $state<number | undefined>();
+  const jumpDisabled = $derived(uiStore.loading || gridStore.filteredRows === 0);
+  // 多对象文件（rda）与多工作表（xlsx）显示当前载入的变量名。
+  const title = $derived(gridStore.selectedSheet ? `${gridStore.fileName} › ${gridStore.selectedSheet}` : gridStore.fileName);
 </script>
 
 <svelte:window onclick={(event) => { if (!(event.target as Element).closest('.col-panel-wrap')) columns = false; }} />
 <div class="toolbar">
-  <span class="file-name" title={gridStore.fileName}>{gridStore.fileName}</span>
+  <span class="file-name" title={title}>{title}</span>
   <input class="search-input" type="search" placeholder={gridStore.paged ? 'Search unavailable in on-demand mode' : 'Search…'}
     disabled={gridStore.paged} value={gridStore.globalSearch}
     oninput={(event) => gridStore.setGlobalSearch(event.currentTarget.value)} aria-label="Search table" />
+  <form class="row-jump" onsubmit={(event) => {
+    event.preventDefault();
+    if (!jumpDisabled && rowNumber !== undefined) gridStore.goToRow(rowNumber);
+  }}>
+    <input class="row-input" type="number" min="1" max={gridStore.filteredRows} step="1" required
+      bind:value={rowNumber} disabled={jumpDisabled} placeholder="Row…" aria-label="Go to row"
+      title={`Row in current view (1–${gridStore.filteredRows.toLocaleString()}); Enter to jump`} />
+    <button type="submit" disabled={jumpDisabled || rowNumber === undefined}>Go</button>
+  </form>
   {#if gridStore.filters.length}<button onclick={() => gridStore.clearFilters()}>Clear filters</button>{/if}
   <button onclick={() => gridStore.toggleColColors()} title="Color columns">Colors</button>
   <button disabled={gridStore.paged} onclick={() => stats = !stats}>Statistics</button>
@@ -36,6 +49,8 @@
   .toolbar { display: flex; align-items: center; gap: 8px; padding: 6px 12px; background: var(--gm-toolbar-bg); border-bottom: 1px solid var(--gm-border); min-height: 38px; flex-shrink: 0; }
   .file-name { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--gm-fg-muted); }
   .search-input { flex: 1; min-width: 80px; max-width: 500px; margin: 0 auto; padding: 5px 8px; background: var(--gm-input-bg); color: var(--gm-fg); border: 1px solid var(--gm-border); border-radius: 4px; }
+  .row-jump { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
+  .row-input { width: 90px; padding: 5px 8px; background: var(--gm-input-bg); color: var(--gm-fg); border: 1px solid var(--gm-border); border-radius: 4px; font: inherit; font-size: 12px; }
   button { padding: 4px 8px; background: transparent; border: 1px solid transparent; border-radius: 4px; color: var(--gm-fg); cursor: pointer; font: inherit; font-size: 11px; white-space: nowrap; }
   button:hover { background: var(--gm-hover); }
   button:disabled { opacity: .4; cursor: default; }

@@ -1,11 +1,6 @@
 # 一次性脚本：从环境变量取参数，转换一次即退出（无 R 常驻进程时使用）。
-here <- function() {
-  args <- commandArgs(FALSE)
-  index <- which(args %in% c("-f", "--file"))
-  file <- if (length(index)) sub("^--file=", "", args[[index[[1L]] + 1L]]) else NA_character_
-  if (is.na(file)) getwd() else dirname(normalizePath(file))
-}
-source(file.path(here(), "table-lib.R"))
+# arf 不在 commandArgs 中暴露脚本路径，故由宿主经 RDATA_LIB 传入脚本目录。
+source(file.path(Sys.getenv("RDATA_LIB"), "table-lib.R"))
 
 read_table(
   input = Sys.getenv("RDATA_INPUT"),

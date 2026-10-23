@@ -2,6 +2,8 @@
 
 面向 R 的 VS Code **只读表格查看器**。复用 Grid Master 的 Svelte 表格 UI，统一通过 Arrow 或磁盘行索引读取数据；不依赖 Python、DuckDB、Java。
 
+
+
 ## 当前扩展支持的格式
 
 | 格式 | 读取方式 | R 包 |
@@ -18,6 +20,31 @@ R 对象支持 data.frame、data.table、tibble 和矩阵；列表列显示为 R
 小表完整加载，支持排序、筛选、搜索和统计；大表仅保留当前页缓存，关闭/隐藏标签页释放内存，关闭后删除临时文件。默认阈值 64 MiB，另外限制小表最多 100,000 行。压缩文件也按行列规模估算内存；Arrow 单个压缩 batch 仍必须整体解压。
 
 **QS2/QDATA/RDS/RDA/XLSX 的首次转换不是按需反序列化**，大型对象仍需要足够的 R 内存和临时磁盘空间。经常查看的大表建议保存为 fst 或分批写入 Feather V2。
+
+## 加载与翻页性能
+
+`data/big.*` 实测：200 万行 × 10 列，每页 500 行，重复 3 次取中位数。环境为 macOS ARM64、Node.js 26.10.0，R 通过 arf 执行；使用默认 64 MiB 阈值。耗时单位：**毫秒**。
+
+| 格式 | 文件大小（MiB） | 冷加载 | 热加载 | 首页 | 中页 | 尾页 |
+|---|---:|---:|---:|---:|---:|---:|
+| Arrow | 87.0 | 1.5 | 1.6 | 4.8 | 7.4 | 3.2 |
+| Feather | 87.0 | 1.3 | 1.4 | 4.1 | 4.7 | 3.4 |
+| CSV | 173.9 | 1446.5 | 579.6 | 28.1 | 26.8 | 14.7 |
+| fst | 84.0 | 732.3 | 50.5 | 61.3 | 54.0 | 56.9 |
+| qdata | 41.1 | 1226.8 | 396.3 | 23.6 | 23.6 | 13.3 |
+| qs2 | 42.2 | 1235.8 | 477.0 | 23.1 | 23.7 | 13.3 |
+| rda | 46.2 | 1568.0 | 821.9 | 23.1 | 23.9 | 13.0 |
+| rds | 46.2 | 1482.1 | 734.2 | 22.3 | 22.4 | 12.7 |
+
+- **冷／热加载**：冷加载使用新 R 进程；热加载复用 R 进程，但仍重新读取／转换文件，并非数据缓存命中。Arrow／Feather 无需 R。
+- **翻页**：打开后依次读取首／中／尾页，耗时不含加载阶段；首屏可用时间还需加上首页读取耗时。
+- **测量边界**：仅测扩展 reader，不含 Webview 通信、预取和绘制；未清理系统文件缓存。此 CSV 小于 512 MiB，走整表转换路径。
+
+主要瓶颈是 R 启动和整表转换，而非转换后的翻页。复测命令（原始结果写入 `data/test-perform.json`）：
+
+```bash
+RDATA_PERF=1 RDATA_TEST_R=arf npx vitest run tests/test-perform.test.ts
+```
 
 ## R arrow 的格式支持与当前边界
 
@@ -73,6 +100,8 @@ source("scripts/read-arrow-rows.R")
 
 3. 扩展以 `priority: default` 注册上述全部格式。已有的用户文件关联仍优先；若其他扩展也声明默认，可通过 **Reopen Editor With… → Configure default editor… → R Data View** 指定。也可在资源管理器右键选择 **Open with R Data View**。
 
+工具栏 `Row…` 输入从 1 开始的行号，按回车或点击 `Go` 跳转并选中该行；行号以当前排序/筛选后的视图为准，大表按需加载目标页。
+
 保留列宽调整、隐藏/重排/冻结列、冻结行、单元格/范围选择、复制、列配色与统计。分页模式明确禁用全表排序/筛选/搜索/统计；复制最多 10,000 行。CSV 导出在主机端分批写入：小表导出当前筛选/排序结果，大表导出完整原表；不允许覆盖源文件。源数据只读，不写旁车文件。
 
 仅支持本地文件系统与受信任工作区；SSH/WSL 等远程工作区在扩展所在主机配置 R。这里只打开磁盘文件，不连接正在运行的 R 会话。
@@ -103,6 +132,7 @@ RDATA_TEST_ARROW=/path/to/large.arrow npm test
 - `src/extension/scripts/read-table.R`：唯一 R 入口，负责格式转换与 fst 行区间。
 - `src/shared/`：消息与类型。
 - `webview-ui/src/`：复用的 Svelte UI；无解析 worker、WASM 或重复数据通道。
+- `webview-ui/tests/`：UI 状态、行跳转与主机通信测试。
 - `tests/fixtures/`：压缩 Arrow 与多工作表 Excel 测试数据。
 
 UI 与 Arrow reader 源自 MIT 授权的 [Grid Master](https://github.com/sciro24/vscode_grid_master)；见 [NOTICE.md](NOTICE.md)。

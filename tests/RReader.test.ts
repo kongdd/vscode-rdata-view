@@ -72,6 +72,14 @@ describe.skipIf(!executable)('R formats (set RDATA_TEST_R to run)', () => {
     disposeRWorker();
   });
 
+  it('exposes variable names saved by qs_savem', async () => {
+    const reader = await RReader.open(join(dir, 'objects.qs2'), options);
+    readers.push(reader);
+    expect(reader.choices).toEqual(['table']);
+    expect(reader.selected).toBe('table');
+    expect(reader.totalRows).toBe(1100);
+  });
+
   it('lists only tabular RDA objects, selects exact Unicode names and renders matrices', async () => {
     const path = join(dir, 'objects.rda');
     const reader = await RReader.open(path, { ...options, selected: "中文 ' object" });

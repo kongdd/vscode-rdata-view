@@ -1,16 +1,14 @@
 <script lang="ts">
+  import { untrack } from 'svelte';
   import { gridStore } from '../stores/grid.svelte.js';
+  import { ROW_HEIGHT, HEADER_HEIGHT, OVERSCAN, MAX_SCROLLABLE_HEIGHT, rowScrollTop } from '../stores/rowNavigation.js';
   import { postMessage } from '../bridge/vscode.js';
   import type { CellValue } from '@shared/schema.js';
   import RowContextMenu from './RowContextMenu.svelte';
   import ColumnMenu from './ColumnMenu.svelte';
   import ColumnStatsPanel from './ColumnStatsPanel.svelte';
 
-  const ROW_HEIGHT = 26;
-  const HEADER_HEIGHT = 32;
-  const OVERSCAN = 8;
   const MIN_COL_WIDTH = 40;
-  const MAX_SCROLLABLE_HEIGHT = 33_000_000;
 
   const ROWNUM_WIDTH = 56;
 
@@ -35,14 +33,13 @@
     frozenRowIdx !== null && frozenRowIdx < totalRows ? ROW_HEIGHT : 0
   );
 
-  const visibleRowCount = $derived(Math.ceil(viewportHeight / ROW_HEIGHT) + OVERSCAN * 2);
+  const visibleRowCount = $derived(Math.max(1, Math.ceil((viewportHeight - HEADER_HEIGHT - frozenBandHeight) / ROW_HEIGHT)) + OVERSCAN * 2);
   const maxDataStart = $derived(Math.max(0, totalRows - visibleRowCount));
   const maxScrollTop = $derived(Math.max(1, scrollHeight - viewportHeight));
-  const isNearBottom = $derived.by(() => scrollHeight > 0 && maxScrollTop - scrollTop <= ROW_HEIGHT * (OVERSCAN + 2));
-  const isAtEnd = $derived.by(() => scrollHeight > 0 && scrollTop + viewportHeight >= scrollHeight - 1);
+  const isAtEnd = $derived.by(() => scrollHeight > 0 && scrollTop + viewportHeight >= scrollHeight - 0.01);
   const scrollRatio = $derived.by(() => {
     if (!compressedScroll) return 0;
-    if (isAtEnd || isNearBottom) return 1;
+    if (isAtEnd) return 1;
     return Math.min(1, Math.max(0, scrollTop / maxScrollTop));
   });
 
@@ -52,9 +49,8 @@
     if (!compressedScroll) {
       return Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN);
     }
-    if (isAtEnd || isNearBottom) return maxDataStart;
+    if (isAtEnd) return maxDataStart;
     const base = Math.floor(scrollRatio * maxDataStart);
-    if (base >= maxDataStart - OVERSCAN) return maxDataStart;
     const withOverscan = base - OVERSCAN;
     return Math.max(0, Math.min(withOverscan, maxDataStart));
   });
@@ -86,7 +82,7 @@
   // of the viewport (with OVERSCAN rows above it).
   const displayOffsetPx = $derived.by(() => {
     if (!compressedScroll) return displayStartRow * ROW_HEIGHT;
-    if (isAtEnd || isNearBottom) {
+    if (isAtEnd) {
       return Math.max(0, virtualTotalHeight - visibleRowCount * ROW_HEIGHT);
     }
     return Math.max(0, scrollTop - OVERSCAN * ROW_HEIGHT);
@@ -94,6 +90,15 @@
 
   $effect(() => {
     gridStore.updateViewport(startRow, endRow);
+  });
+
+  $effect(() => {
+    const target = gridStore.rowJump;
+    if (target && scrollerEl) untrack(() => {
+      onResize();
+      scrollerEl.scrollTop = rowScrollTop(target.row, totalRows, viewportHeight, scrollHeight, frozenBandHeight);
+      scrollTop = scrollerEl.scrollTop;
+    });
   });
 
   function onScroll(e: Event) {

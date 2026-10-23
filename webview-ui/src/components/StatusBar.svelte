@@ -100,6 +100,10 @@
   </div>
 
   <div class="status-right">
+    {#if gridStore.paged}
+      <span class="status-badge"
+        title="Only visible pages are loaded; global sort, filter, search and statistics are unavailable">On-demand</span>
+    {/if}
     {#if uiStore.exportProgress !== null}
       <span class="status-badge export-progress-badge">
         Exporting… {uiStore.exportProgress ?? 0}%

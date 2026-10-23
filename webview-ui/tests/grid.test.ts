@@ -2,9 +2,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { InitPayload } from '@shared/messages.js';
 
 const { read, post } = vi.hoisted(() => ({ read: vi.fn(), post: vi.fn() }));
-vi.mock('../bridge/readHostRows.js', () => ({ readHostRows: read, cancelPages: vi.fn() }));
-vi.mock('../bridge/vscode.js', () => ({ postMessage: post }));
-import { gridStore } from './grid.svelte.js';
+vi.mock('../src/bridge/readHostRows.js', () => ({ readHostRows: read, cancelPages: vi.fn() }));
+vi.mock('../src/bridge/vscode.js', () => ({ postMessage: post }));
+import { gridStore } from '../src/stores/grid.svelte.js';
 
 const payload = (paged = false): InitPayload => ({
   fileType: 'rds', fileName: 'test.rds', totalRows: 3, totalBytes: 100,
@@ -52,6 +52,44 @@ describe('small tables share one data path', () => {
     gridStore.init({ ...payload(), selected: 'other' });
     expect(gridStore.filters).toEqual([]);
     expect(gridStore.frozenCols.size).toBe(0);
+  });
+});
+
+describe('row navigation', () => {
+  it('uses 1-based row numbers and replaces the previous selection', () => {
+    gridStore.selectCell(0, 0);
+    gridStore.selectCol(0);
+    expect(gridStore.goToRow(3)).toBe(true);
+    expect(gridStore.selectedRow).toBe(2);
+    expect(gridStore.selectedCell).toBeNull();
+    expect(gridStore.selectedCol).toBeNull();
+    expect(gridStore.rowJump).toEqual({ row: 2 });
+    const previous = gridStore.rowJump;
+    gridStore.goToRow(3);
+    expect(gridStore.rowJump).not.toBe(previous);
+  });
+
+  it.each([0, -1, 4, 1.5, NaN, Infinity])('rejects invalid row %s without changing selection', row => {
+    gridStore.goToRow(2);
+    expect(gridStore.goToRow(row)).toBe(false);
+    expect(gridStore.selectedRow).toBe(1);
+  });
+
+  it('navigates the current view and clears the jump when the view changes', () => {
+    gridStore.setSort({ colIndex: 0, direction: 'asc' });
+    gridStore.goToRow(2);
+    expect(gridStore.getCell(gridStore.selectedRow!, 0)).toBe(2);
+    gridStore.setGlobalSearch('missing');
+    expect(gridStore.rowJump).toBeNull();
+    expect(gridStore.goToRow(1)).toBe(false);
+  });
+
+  it('supports distant rows without scanning a paged table', () => {
+    gridStore.init({ ...payload(true), totalRows: 5_000_000 });
+    read.mockClear();
+    expect(gridStore.goToRow(4_000_000)).toBe(true);
+    expect(gridStore.rowJump).toEqual({ row: 3_999_999 });
+    expect(read).not.toHaveBeenCalled();
   });
 });
 

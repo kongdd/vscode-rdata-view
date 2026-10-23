@@ -23,9 +23,6 @@
 <div class="app-shell">
   {#if uiStore.error}<ErrorBanner message={uiStore.error} />{/if}
   {#if gridStore.notice}<NoticeBanner message={gridStore.notice} />{/if}
-  {#if gridStore.paged}
-    <NoticeBanner message="On-demand mode: only visible pages are loaded. Global sort, filter, search and statistics are unavailable." />
-  {/if}
   <Toolbar />
   {#if gridStore.filters.length}<FilterBar />{/if}
   {#if gridStore.availableSheets.length > 1}<SheetTabs />{/if}

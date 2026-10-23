@@ -2,7 +2,7 @@ import { execFile } from 'node:child_process';
 import { createReadStream } from 'node:fs';
 import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join, extname } from 'node:path';
+import { dirname, join, extname } from 'node:path';
 import { promisify } from 'node:util';
 import { ArrowFileReader } from './ArrowFileReader.js';
 import { runR } from './RWorker.js';
@@ -41,7 +41,7 @@ async function prepare(path: string, options: ROptions, start = 0, end = 1, extr
     } else {
       const result = await exec(options.executable, ['--vanilla', '--slave', '-f', options.script], {
         env: {
-          ...process.env, RDATA_INPUT: path, RDATA_OUTPUT: output,
+          ...process.env, RDATA_LIB: dirname(options.script), RDATA_INPUT: path, RDATA_OUTPUT: output,
           RDATA_SELECTED: options.selected ?? '', RDATA_START: String(start), RDATA_END: String(end),
           ...extra,
         },

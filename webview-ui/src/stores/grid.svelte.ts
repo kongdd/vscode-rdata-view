@@ -69,6 +69,7 @@ class GridStore {
   selectedRow = $state<number | null>(null);
   selectedCol = $state<number | null>(null);
   selectionAnchor = $state<{ row: number; col: number } | null>(null);
+  rowJump = $state<{ row: number } | null>(null);
   availableSheets = $state<string[]>([]);
   selectedSheet = $state('');
   cacheVersion = $state(0);
@@ -186,6 +187,7 @@ class GridStore {
   }
 
   private rebuildView(clearFrozenRow = true): void {
+    this.rowJump = null;
     this.view = !this.paged && hasViewTransform(this.filters, this.sort, this.globalSearch)
       ? buildViewIndex(this.rows, this.filters, this.sort, this.globalSearch) : null;
     this.filteredRows = this.view ? this.view.length : this.totalRows;
@@ -237,6 +239,15 @@ class GridStore {
     const colors = ['rgba(100,149,237,.12)', 'rgba(144,238,144,.12)', 'rgba(255,182,193,.14)',
       'rgba(255,218,120,.13)', 'rgba(175,238,238,.14)', 'rgba(221,160,221,.14)'];
     this.colColors = this.colColors.size ? new Map() : new Map(this.schema.map(col => [col.index, colors[col.index % colors.length]]));
+  }
+
+  goToRow(rowNumber: number): boolean {
+    if (!Number.isSafeInteger(rowNumber) || rowNumber < 1 || rowNumber > this.filteredRows) return false;
+    this.clearSelection();
+    this.selectRow(rowNumber - 1);
+    // A new object lets the same row be revealed again after scrolling away.
+    this.rowJump = { row: rowNumber - 1 };
+    return true;
   }
 
   selectCell(row: number, col: number): void {

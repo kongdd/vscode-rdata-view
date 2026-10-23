@@ -16,6 +16,7 @@ R Data View 是面向 R 数据的 VS Code 只读表格查看器，支持 CSV 导
 - `src/extension/scripts/`：扩展运行所需的 R 脚本。
 - `src/shared/`：消息协议、类型、筛选和 Arrow 压缩解码。
 - `webview-ui/src/`：Svelte 5 表格 UI、状态和主机通信。
+- `webview-ui/tests/`：UI 测试统一放在此处，不与 `src/` 源码混放。
 - `scripts/`：独立 R 工具及数据生成脚本。
 - `tests/fixtures/`：测试数据；业务样例放 `data/`，图片放 `images/`。
 - `release/`：VSIX 构建产物，不手改 `dist/` 中的生成文件。

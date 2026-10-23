@@ -5,6 +5,6 @@
 !NOTICE.md
 !assets/icon.png
 !dist/extension.js
-!dist/read-table.R
+!dist/*.R
 !webview-ui/dist/main.js
 !webview-ui/dist/index.css

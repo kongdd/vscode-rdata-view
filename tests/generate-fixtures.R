@@ -16,6 +16,9 @@ env[["中文 ' object"]] <- table
 env[["matrix"]] <- matrix(1:6, nrow = 2)
 env[["not_table"]] <- 42
 save(list = ls(env), envir = env, file = file.path(dir, "objects.rda"))
+# qs_savem() 会保留变量名，可用于验证多对象 qs2。
+number <- 42
+qs2::qs_savem(number, table, file = file.path(dir, "objects.qs2"))
 saveRDS(42, file.path(dir, "scalar.rds"))
 nested <- data.frame(id = 1:2)
 nested$items <- list(c(1, 2), list(a = TRUE))

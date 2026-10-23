@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 const { post } = vi.hoisted(() => ({ post: vi.fn() }));
-vi.mock('./vscode.js', () => ({ postMessage: post }));
-import { readHostRows, receivePage, cancelPages } from './readHostRows.js';
+vi.mock('../src/bridge/vscode.js', () => ({ postMessage: post }));
+import { readHostRows, receivePage, cancelPages } from '../src/bridge/readHostRows.js';
 
 afterEach(() => { cancelPages(); vi.useRealTimers(); post.mockClear(); });
 describe('correlated page requests', () => {

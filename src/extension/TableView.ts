@@ -147,6 +147,8 @@ export class TableView implements vscode.Disposable {
       controller.signal.throwIfAborted();
       const choices = reader instanceof RReader ? reader.choices : [];
       this.selected = reader instanceof RReader ? reader.selected : '';
+      // 标签页标题带上当前变量名，避免多对象文件（rda/qs2 等）看不出载入的是哪一个。
+      this.panel.title = this.selected ? `${basename(this.uri.fsPath)} › ${this.selected}` : basename(this.uri.fsPath);
       this.send({ type: 'INIT', payload: {
         fileType: type, fileName: basename(this.uri.fsPath), totalRows: reader.totalRows, totalBytes,
         schema: reader.schema, rows, paged: this.paged, notice: reader.notice, choices, selected: this.selected,

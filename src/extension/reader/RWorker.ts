@@ -1,4 +1,5 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { dirname } from 'node:path';
 
 const IDLE_MS = 60_000;
 
@@ -55,6 +56,7 @@ class RWorker {
   private start(): ChildProcessWithoutNullStreams {
     if (this.proc) return this.proc;
     const proc = spawn(this.executable, ['--vanilla', '--slave', '-f', this.script], {
+      env: { ...process.env, RDATA_LIB: dirname(this.script) },
       stdio: ['pipe', 'pipe', 'pipe'],
     });
     proc.stdout.setEncoding('utf8');
