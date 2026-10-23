@@ -3,8 +3,8 @@ import { appendFile, copyFile, mkdtemp, readFile, readdir, rm, writeFile } from 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { tableFromArrays, tableToIPC } from 'apache-arrow';
-import { ArrowFileReader, ArrowStreamError } from '../src/extension/ArrowFileReader.js';
-import { CsvReader } from '../src/extension/CsvReader.js';
+import { ArrowFileReader, ArrowStreamError } from '../src/extension/reader/ArrowFileReader.js';
+import { CsvReader } from '../src/extension/reader/CsvReader.js';
 import type { PagedReader } from '../src/extension/paging/PagedReader.js';
 import { exportCsv } from '../src/extension/exportCsv.js';
 

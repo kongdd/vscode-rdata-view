@@ -6,9 +6,9 @@ import { join, extname } from 'node:path';
 import { createInterface } from 'node:readline';
 import type { Duplex } from 'node:stream';
 import Papa from 'papaparse';
-import { FilePager, fileStamp } from './paging/PagedReader.js';
-import { CHUNK_SIZE } from '../shared/constants.js';
-import type { CellValue } from '../shared/schema.js';
+import { FilePager, fileStamp } from '../paging/PagedReader.js';
+import { CHUNK_SIZE } from '../../shared/constants.js';
+import type { CellValue } from '../../shared/schema.js';
 
 /** One bounded streaming pass builds a sparse row index; the original stays untouched. */
 export class CsvReader extends FilePager {

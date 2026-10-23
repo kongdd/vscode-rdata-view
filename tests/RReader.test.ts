@@ -4,7 +4,7 @@ import { mkdtemp, readdir, rm } from 'node:fs/promises';
 import { promisify } from 'node:util';
 import { tmpdir } from 'node:os';
 import { join, resolve, dirname } from 'node:path';
-import { RReader } from '../src/extension/RReader.js';
+import { RReader } from '../src/extension/reader/RReader.js';
 
 const executable = process.env.RDATA_TEST_R;
 const options = { executable: executable ?? 'R', script: resolve('src/extension/scripts/read-table.R'), timeout: 120_000 };

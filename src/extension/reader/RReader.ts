@@ -4,8 +4,8 @@ import { tmpdir } from 'node:os';
 import { join, extname } from 'node:path';
 import { promisify } from 'node:util';
 import { ArrowFileReader } from './ArrowFileReader.js';
-import { FilePager, fileStamp } from './paging/PagedReader.js';
-import type { CellValue } from '../shared/schema.js';
+import { FilePager, fileStamp } from '../paging/PagedReader.js';
+import type { CellValue } from '../../shared/schema.js';
 
 const exec = promisify(execFile);
 export interface ROptions { executable: string; script: string; timeout: number; signal?: AbortSignal; selected?: string }

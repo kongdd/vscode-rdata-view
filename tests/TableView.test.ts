@@ -19,7 +19,7 @@ vi.mock('vscode', async () => {
   };
 });
 import { TableView } from '../src/extension/TableView.js';
-import { ArrowFileReader } from '../src/extension/ArrowFileReader.js';
+import { ArrowFileReader } from '../src/extension/reader/ArrowFileReader.js';
 
 const uri = (fsPath: string) => ({ fsPath, scheme: 'file' }) as vscode.Uri;
 let dir: string;

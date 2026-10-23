@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { applyFilter, compareValues, validateRegexFilter } from './filterUtils.js';
-import type { CellValue } from './schema.js';
+import { applyFilter, compareValues, validateRegexFilter } from '../src/shared/filterUtils.js';
+import type { CellValue } from '../src/shared/schema.js';
 
 // Rows may still hold undefined at runtime even though the type says otherwise.
 const missing = undefined as unknown as CellValue;

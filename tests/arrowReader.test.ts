@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { readArrowIPC } from './arrowReader.js';
+import { readArrowIPC } from '../src/shared/arrowReader.js';
 
 describe('Feather V2 compression', () => {
   it.each(['uncompressed', 'lz4', 'zstd'])('reads %s buffers and dictionaries', codec => {
