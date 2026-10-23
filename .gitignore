@@ -1,0 +1,12 @@
+node_modules/
+dist/
+webview-ui/dist/
+release/
+*.tsbuildinfo
+.DS_Store
+
+images
+*.png
+
+.pi
+*lock*

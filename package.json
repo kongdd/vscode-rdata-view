@@ -1,0 +1,153 @@
+{
+  "name": "rdata-view",
+  "displayName": "R Data View",
+  "description": "View R fst, qs2, qdata, rda, rds, CSV, Excel and Arrow tables using a fast, read-only grid.",
+  "version": "0.1.0",
+  "publisher": "kongdd",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kongdd/vscode-rdata-view"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "extensionKind": ["workspace"],
+  "categories": [
+    "Data Science",
+    "Visualization"
+  ],
+  "keywords": [
+    "R",
+    "fst",
+    "qs2",
+    "qdata",
+    "rds",
+    "rda",
+    "csv",
+    "xlsx",
+    "arrow",
+    "table"
+  ],
+  "icon": "assets/icon.png",
+  "main": "./dist/extension.js",
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": false
+    },
+    "virtualWorkspaces": {
+      "supported": false
+    }
+  },
+  "contributes": {
+    "customEditors": [
+      {
+        "viewType": "rdataView.table",
+        "displayName": "R Data View",
+        "selector": [
+          {
+            "filenamePattern": "*.fst"
+          },
+          {
+            "filenamePattern": "*.qs2"
+          },
+          {
+            "filenamePattern": "*.qdata"
+          },
+          {
+            "filenamePattern": "*.rda"
+          },
+          {
+            "filenamePattern": "*.RData"
+          },
+          {
+            "filenamePattern": "*.rdata"
+          },
+          {
+            "filenamePattern": "*.rds"
+          },
+          {
+            "filenamePattern": "*.csv"
+          },
+          {
+            "filenamePattern": "*.tsv"
+          },
+          {
+            "filenamePattern": "*.xlsx"
+          },
+          {
+            "filenamePattern": "*.arrow"
+          },
+          {
+            "filenamePattern": "*.feather"
+          }
+        ],
+        "priority": "option"
+      }
+    ],
+    "commands": [
+      {
+        "command": "rdataView.open",
+        "title": "Open with R Data View"
+      }
+    ],
+    "menus": {
+      "explorer/context": [
+        {
+          "command": "rdataView.open",
+          "when": "!explorerResourceIsFolder && resourceExtname =~ /\\.(fst|qs2|qdata|rda|rdata|rds|csv|tsv|xlsx|arrow|feather)$/i",
+          "group": "navigation@10"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "R Data View",
+      "properties": {
+        "rdataView.r.executable": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "description": "R or arf executable. Empty reuses vscode-R r.rpath.<platform>, then arf/R from r.consolePath or r.rterm.<platform>, otherwise R on PATH."
+        },
+        "rdataView.r.timeoutSeconds": {
+          "type": "number",
+          "default": 120,
+          "minimum": 1,
+          "description": "R conversion/page timeout in seconds."
+        },
+        "rdataView.pagingThresholdMB": {
+          "type": "number",
+          "default": 64,
+          "minimum": 0,
+          "description": "Memory budget for small tables. Larger tables use on-demand pages. 0 always uses paging."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run build",
+    "build": "node esbuild.config.mjs && npm run build --workspace webview-ui",
+    "check": "tsc --noEmit && npm run check --workspace webview-ui",
+    "test": "vitest run && npm run test --workspace webview-ui",
+    "package": "vsce package --out release/"
+  },
+  "workspaces": [
+    "webview-ui"
+  ],
+  "dependencies": {
+    "apache-arrow": "^21.2.0",
+    "fzstd": "^0.1.1",
+    "lz4js": "^0.2.0",
+    "papaparse": "^5.5.3"
+  },
+  "devDependencies": {
+    "@types/lz4js": "^0.2.2",
+    "@types/node": "^20.0.0",
+    "@types/papaparse": "^5.5.2",
+    "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^3.0.0",
+    "esbuild": "^0.28.0",
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.9"
+  }
+}
