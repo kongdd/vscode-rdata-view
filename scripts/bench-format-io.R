@@ -62,6 +62,18 @@ readers <- list(
   arrow = function() arrow::read_ipc_file(path("arrow")),
   feather = function() arrow::read_feather(path("feather"))
 )
+# DuckDB 仅作对照：R 包 duckdb（conda 安装）需另行可用
+if (requireNamespace("duckdb", quietly = TRUE)) {
+  with_db <- function(sql, write = FALSE) {
+    con <- DBI::dbConnect(duckdb::duckdb(), path("duckdb"), read_only = !write)
+    on.exit(DBI::dbDisconnect(con, shutdown = TRUE))
+    if (write) DBI::dbWriteTable(con, "big", df, overwrite = TRUE)
+    else DBI::dbGetQuery(con, sql)
+  }
+  writers$duckdb <- function() with_db(NULL, write = TRUE)
+  readers$duckdb <- function() with_db("SELECT * FROM big")
+}
+
 # 全部物化为 data.table，并真正扫过数据，避免惰性/零拷贝掩盖成本
 to_dt <- function(x) data.table::as.data.table(x)[, .(n = .N, s = sum(value))]
 
