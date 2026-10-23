@@ -10,16 +10,12 @@ suppressWarnings(suppressMessages({
 # 仅保存必须完整解码的活动对象；隐藏/关闭时释放，进程退出后按需重读。
 tables <- new.env(parent = emptyenv())
 serve <- function(input, output, selected, start, end, paged, sample, classes, key, action) {
+  if (action == "gc") return(invisible(gc(FALSE)))
   if (action == "release") {
     if (exists(key, tables, inherits = FALSE)) rm(list = key, envir = tables)
-    invisible(gc(FALSE))
     return(invisible(TRUE))
   }
-  if (!nzchar(key)) {
-    read_table(input, output, selected, start, end, paged, sample, classes)
-    invisible(gc(FALSE))
-    return(invisible(TRUE))
-  }
+  if (!nzchar(key)) return(read_table(input, output, selected, start, end, paged, sample, classes))
   if (!exists(key, tables, inherits = FALSE)) {
     tables[[key]] <- load_table(input, selected = selected)
   }

@@ -8,7 +8,7 @@ import { CHUNK_SIZE } from '../src/shared/constants.js';
 
 // RDATA_PERF=1 RDATA_TEST_R=arf npx vitest run tests/test-perform.test.ts
 // 只测实际 reader，不含 Webview 通信/绘制；冷加载指新 R 进程，不清理系统文件缓存。
-it.skipIf(process.env.RDATA_PERF !== '1')('data/ loading and paging performance', async () => {
+it.skipIf(process.env.RDATA_PERF !== '1')('data/big.* loading and paging performance', async () => {
   const options = {
     executable: process.env.RDATA_TEST_R || 'arf',
     script: resolve('src/extension/scripts/read-table.R'),
@@ -20,7 +20,7 @@ it.skipIf(process.env.RDATA_PERF !== '1')('data/ loading and paging performance'
   const samples: Record<string, number | string>[] = [];
   const summary: Record<string, number | string>[] = [];
   const median = (values: number[]) => values.sort((a, b) => a - b)[Math.floor(values.length / 2)];
-  const files = (await readdir('data')).filter(name => /\.(arrow|feather|csv|tsv|fst|qs2|qdata|rds|rda|rdata|xlsx)$/i.test(name)).sort();
+  const files = (await readdir('data')).filter(name => /^big\.(arrow|feather|csv|tsv|fst|qs2|qdata|rds|rda|rdata|xlsx)$/i.test(name)).sort();
   expect(files.length).toBeGreaterThan(0);
   try {
     for (const file of files) {

@@ -6,6 +6,13 @@ table <- data.frame(
   group = factor(rep(c("a", "b"), 550))
 )
 saveRDS(table, file.path(dir, "table.rds"))
+saveRDS(table[0, ], file.path(dir, "empty.rds"))
+semantics <- data.frame(
+  big = bit64::as.integer64(c("9007199254740993", NA_character_)),
+  time = as.POSIXct(c("2025-01-01", NA_character_), tz = "UTC"),
+  text = c(NA_character_, "中文")
+)
+saveRDS(semantics, file.path(dir, "semantics.rds"))
 data.table::fwrite(table, file.path(dir, "table.csv"))
 qs2::qs_save(table, file.path(dir, "table.qs2"))
 qs2::qd_save(table, file.path(dir, "table.qdata"))

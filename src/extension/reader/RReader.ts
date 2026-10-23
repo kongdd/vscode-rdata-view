@@ -1,11 +1,12 @@
 import { execFile } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, extname } from 'node:path';
 import { promisify } from 'node:util';
 import { ArrowFileReader } from './ArrowFileReader.js';
-import { runR } from './RWorker.js';
+import { releaseR, runR } from './RWorker.js';
 import { FilePager, fileStamp } from '../paging/PagedReader.js';
 import type { CellValue } from '../../shared/schema.js';
 
@@ -35,7 +36,7 @@ async function prepare(path: string, options: ROptions, start = 0, end = 1, extr
       // 常驻进程：一次请求完成同样的转换，省去启动与包加载。
       const request = [path, output, options.selected ?? '', start, end,
         extra.RDATA_PAGED === '1' ? '1' : '0', extra.RDATA_SAMPLE === '1' ? '1' : '0',
-        extra.RDATA_CLASSES ?? ''].join('\t');
+        extra.RDATA_CLASSES ?? '', extra.RDATA_CACHE ?? ''].join('\t');
       const reply = await runR(options.executable, options.server, request, options.signal, options.timeout);
       if (reply !== 'ok') throw new Error(reply.replace(/^error\t/, ''));
     } else {
@@ -62,7 +63,7 @@ async function prepare(path: string, options: ROptions, start = 0, end = 1, extr
   }
 }
 
-/** fst slices rows in R; serialized R objects decode once to a temporary Arrow file. */
+/** fst 真正按行读取；序列化对象驻留常驻 R，仅将当前页写入 Arrow。 */
 export class RReader extends FilePager {
   choices: string[] = [];
   selected = '';
@@ -72,13 +73,17 @@ export class RReader extends FilePager {
   private dir = '';
   private controller?: AbortController;
   private readonly fst: boolean;
+  private readonly cacheKey: string;
   private ranged: boolean;
 
   private constructor(path: string, private options: ROptions) {
     super(path);
     this.fst = extname(path).toLowerCase() === '.fst';
     this.ranged = !this.fst && options.paged === true;
-    if (!this.fst && !this.ranged) this.notice = 'This format is decoded once in R to a temporary Arrow file, then read by page.';
+    // CSV 仍走原有磁盘转换/行区间路径，不把大文本整表常驻冒充分页。
+    this.cacheKey = options.server && /\.(rds|rda|rdata|qs2|qdata|xlsx)$/i.test(path) ? randomUUID() : '';
+    if (this.cacheKey) this.notice = 'This format is fully decoded in R memory; only requested pages are converted to Arrow. Hidden tables are released and reloaded on demand.';
+    else if (!this.fst && !this.ranged) this.notice = 'This format is decoded once in R to a temporary Arrow file, then read by page.';
   }
 
   static async open(path: string, options: ROptions): Promise<RReader> {
@@ -87,18 +92,19 @@ export class RReader extends FilePager {
     const before = await fileStamp(path);
     try {
       if (reader.ranged && await reader.openRanged(options, before)) return reader;
-      const file = await prepare(path, options);
+      const file = await prepare(path, options, 0, reader.cacheKey ? 0 : 1, reader.cacheExtra);
       reader.cleanup = file.dispose;
       reader.arrow = await ArrowFileReader.open(file.path);
       reader.schema = reader.arrow.schema;
-      reader.totalRows = reader.fst ? Number(await readFile(file.path + '.rows', 'utf8')) : reader.arrow.totalRows;
+      reader.totalRows = reader.fst || reader.cacheKey ? Number(await readFile(file.path + '.rows', 'utf8')) : reader.arrow.totalRows;
       if (!Number.isSafeInteger(reader.totalRows) || reader.totalRows < 0) throw new Error('Invalid R row count');
       const names = (await readFile(file.path + '.names', 'utf8')).trimEnd().split('\n').map(name => Buffer.from(name, 'hex').toString('utf8'));
       reader.selected = names.shift() ?? '';
       reader.choices = names;
-      reader.bytes = (await stat(file.path)).size;
+      reader.options = { ...options, selected: reader.selected };
+      reader.bytes = reader.cacheKey ? Number(await readFile(file.path + '.bytes', 'utf8')) : (await stat(file.path)).size;
       if (await fileStamp(path) !== before) throw new Error('File changed during R conversion. Reopen the editor.');
-      if (reader.fst) {
+      if (reader.fst || reader.cacheKey) {
         await reader.arrow.dispose();
         reader.arrow = undefined;
         await file.dispose();
@@ -138,11 +144,11 @@ export class RReader extends FilePager {
   }
 
   protected async loadRows(start: number, end: number): Promise<CellValue[][]> {
-    if (!this.fst && !this.ranged) return this.arrow!.readRows(start, end);
+    if (!this.fst && !this.ranged && !this.cacheKey) return this.arrow!.readRows(start, end);
     if (start === end) return [];
     this.controller = new AbortController();
     try {
-      const extra: Record<string, string> = this.ranged ? { RDATA_PAGED: '1', RDATA_CLASSES: this.classFile } : {};
+      const extra: Record<string, string> = this.ranged ? { RDATA_PAGED: '1', RDATA_CLASSES: this.classFile } : this.cacheExtra;
       const file = await prepare(this.path, { ...this.options, signal: this.controller.signal }, start, end, extra);
       let arrow: ArrowFileReader | undefined;
       try {
@@ -158,10 +164,14 @@ export class RReader extends FilePager {
   }
 
   private get classFile(): string { return join(this.dir, 'classes.rds'); }
+  private get cacheExtra(): Record<string, string> { return this.cacheKey ? { RDATA_CACHE: this.cacheKey } : {}; }
 
   resume(): void { super.resume(); this.arrow?.resume(); }
   protected cancel(): void { this.controller?.abort(); }
-  protected async close(): Promise<void> { await this.arrow?.suspend(); }
+  protected async close(): Promise<void> {
+    await this.arrow?.suspend();
+    if (this.cacheKey) await releaseR(this.options.executable, this.options.server!, this.cacheKey, this.options.timeout);
+  }
   protected async remove(): Promise<void> {
     try { await this.arrow?.dispose(); } finally {
       await this.cleanup?.();

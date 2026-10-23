@@ -5,7 +5,7 @@ import { promisify } from 'node:util';
 import { tmpdir } from 'node:os';
 import { join, resolve, dirname } from 'node:path';
 import { RReader } from '../src/extension/reader/RReader.js';
-import { disposeRWorker } from '../src/extension/reader/RWorker.js';
+import { disposeRWorker, runR } from '../src/extension/reader/RWorker.js';
 
 const executable = process.env.RDATA_TEST_R;
 const options = { executable: executable ?? 'R', script: resolve('src/extension/scripts/read-table.R'), timeout: 120_000 };
@@ -20,7 +20,7 @@ describe.skipIf(!executable)('R formats (set RDATA_TEST_R to run)', () => {
     });
   });
   afterEach(async () => { await Promise.all(readers.map(reader => reader.dispose())); readers = []; });
-  afterAll(async () => { if (dir) await rm(dir, { recursive: true, force: true }); });
+  afterAll(async () => { disposeRWorker(); if (dir) await rm(dir, { recursive: true, force: true }); });
 
   it.each(['rds', 'qs2', 'qdata', 'fst'])('reads %s and releases resources on suspend/dispose', async ext => {
     const reader = await RReader.open(join(dir, 'table.' + ext), options);
@@ -72,6 +72,66 @@ describe.skipIf(!executable)('R formats (set RDATA_TEST_R to run)', () => {
     disposeRWorker();
   });
 
+  it.each(['rds', 'qs2', 'qdata'])('keeps %s in R, converts only pages and releases hidden/disposed tables', async ext => {
+    const reader = await RReader.open(join(dir, 'table.' + ext), served);
+    readers.push(reader);
+    expect(reader['arrow']).toBeUndefined();
+    expect(reader.totalRows).toBe(1100);
+    expect((await reader.readRows(499, 502)).map(row => row[0])).toEqual([500, 501, 502]);
+    expect((await reader.readRows(0, 1))[0]).toEqual([1, '中文', true, '2025-01-01T00:00:00.000Z', 'a']);
+    const checkReleased = async () => {
+      // 同一个 key 改读非表对象：必须重新解码并报错，不能命中旧表。
+      const reply = await runR(served.executable, served.server, [
+        join(dir, 'scalar.rds'), join(dir, 'probe.arrow'), '', 0, 0, 0, 0, '', reader['cacheKey'],
+      ].join('\t'), undefined, served.timeout);
+      expect(reply).toContain('Expected a data.frame');
+    };
+    await reader.suspend();
+    await checkReleased();
+    await expect(reader.readRows(0, 1)).rejects.toThrow('suspended');
+    reader.resume();
+    expect((await reader.readRows(1099, 5000)).map(row => row[0])).toEqual([1100]);
+    disposeRWorker();
+    expect((await reader.readRows(0, 1))[0][0]).toBe(1);
+    await reader.dispose();
+    await checkReleased();
+  });
+
+  it('isolates cached objects and restores selected names after a worker restart', async () => {
+    const selected = "中文 ' object";
+    const reader = await RReader.open(join(dir, 'objects.rda'), { ...served, selected });
+    const matrix = await RReader.open(join(dir, 'objects.rda'), { ...served, selected: 'matrix' });
+    readers.push(reader, matrix);
+    expect(reader.selected).toBe(selected);
+    await matrix.suspend();
+    expect((await reader.readRows(0, 1))[0][0]).toBe(1);
+    disposeRWorker();
+    matrix.resume();
+    expect(await matrix.readRows(0, 2)).toEqual([[1, 3, 5], [2, 4, 6]]);
+    expect((await reader.readRows(1099, 1100))[0][0]).toBe(1100);
+    const multi = await RReader.open(join(dir, 'objects.qs2'), served);
+    readers.push(multi);
+    expect(multi.choices).toEqual(['table']);
+    expect(multi.selected).toBe('table');
+  });
+
+  it('preserves empty schemas, missing values, large integers, dates and list columns in memory mode', async () => {
+    const empty = await RReader.open(join(dir, 'empty.rds'), served);
+    const nested = await RReader.open(join(dir, 'nested.rds'), served);
+    const semantics = await RReader.open(join(dir, 'semantics.rds'), served);
+    readers.push(empty, nested, semantics);
+    expect(empty.schema).toHaveLength(5);
+    expect(empty.totalRows).toBe(0);
+    expect(await empty.readRows(0, 1)).toEqual([]);
+    expect((await nested.readRows(0, 1))[0][1]).toContain('c(1, 2)');
+    expect(await semantics.readRows(0, 2)).toEqual([
+      ['9007199254740993', '2025-01-01T00:00:00.000Z', null],
+      [null, null, '中文'],
+    ]);
+    await expect(semantics.readRows(-1, 1)).rejects.toThrow('Invalid row range');
+    await expect(RReader.open(join(dir, 'scalar.rds'), served)).rejects.toThrow('Expected a data.frame');
+  });
+
   it('exposes variable names saved by qs_savem', async () => {
     const reader = await RReader.open(join(dir, 'objects.qs2'), options);
     readers.push(reader);
@@ -105,8 +165,8 @@ describe.skipIf(!executable)('R formats (set RDATA_TEST_R to run)', () => {
     await expect(RReader.open(join(dir, 'scalar.rds'), options)).rejects.toThrow('Expected a data.frame');
   });
 
-  it('lists and switches Excel worksheets through the same R → Arrow path', async () => {
-    const reader = await RReader.open(resolve('tests/fixtures/workbook.xlsx'), { ...options, selected: '中文' });
+  it.each([options, served])('lists and switches Excel worksheets through the same R → Arrow path (%j)', async settings => {
+    const reader = await RReader.open(resolve('tests/fixtures/workbook.xlsx'), { ...settings, selected: '中文' });
     readers.push(reader);
     expect(reader.choices).toEqual(['first', '中文']);
     expect(reader.selected).toBe('中文');
