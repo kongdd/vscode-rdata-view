@@ -6,6 +6,7 @@ table <- data.frame(
   group = factor(rep(c("a", "b"), 550))
 )
 saveRDS(table, file.path(dir, "table.rds"))
+data.table::fwrite(table, file.path(dir, "table.csv"))
 qs2::qs_save(table, file.path(dir, "table.qs2"))
 qs2::qd_save(table, file.path(dir, "table.qdata"))
 fst::write_fst(table, file.path(dir, "table.fst"))

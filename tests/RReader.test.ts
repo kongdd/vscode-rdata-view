@@ -1,13 +1,15 @@
 import { beforeAll, afterAll, afterEach, describe, expect, it } from 'vitest';
 import { execFile } from 'node:child_process';
-import { mkdtemp, readdir, rm } from 'node:fs/promises';
+import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { promisify } from 'node:util';
 import { tmpdir } from 'node:os';
 import { join, resolve, dirname } from 'node:path';
 import { RReader } from '../src/extension/reader/RReader.js';
+import { disposeRWorker } from '../src/extension/reader/RWorker.js';
 
 const executable = process.env.RDATA_TEST_R;
 const options = { executable: executable ?? 'R', script: resolve('src/extension/scripts/read-table.R'), timeout: 120_000 };
+const served = { ...options, server: resolve('src/extension/scripts/read-table-server.R') };
 let dir: string;
 let readers: RReader[] = [];
 describe.skipIf(!executable)('R formats (set RDATA_TEST_R to run)', () => {
@@ -36,6 +38,38 @@ describe.skipIf(!executable)('R formats (set RDATA_TEST_R to run)', () => {
       await reader.dispose();
       await expect(readdir(dirname(path))).rejects.toThrow();
     }
+  });
+
+  it('reads a large CSV by row range without converting the whole file', async () => {
+    const path = join(dir, 'plain.csv');
+    await writeFile(path, 'id,text,value\n' + Array.from({ length: 5000 }, (_, i) => `${i + 1},row-${i + 1},${i / 10}\n`).join(''));
+    const reader = await RReader.open(path, { ...options, paged: true });
+    readers.push(reader);
+    expect(reader['ranged']).toBe(true);
+    expect(reader.totalRows).toBe(5000);
+    expect(await reader.readRows(0, 1)).toEqual([[1, 'row-1', 0]]);
+    expect((await reader.readRows(499, 502)).map(row => row[0])).toEqual([500, 501, 502]);
+    expect((await reader.readRows(4999, 9000))).toEqual([[5000, 'row-5000', 499.9]]);
+  });
+
+  it('falls back to a full conversion when quoted fields break line numbering', async () => {
+    const reader = await RReader.open(join(dir, 'table.csv'), { ...options, paged: true });
+    readers.push(reader);
+    expect(reader['ranged']).toBe(false);
+    expect(reader.totalRows).toBe(1100);
+    expect((await reader.readRows(499, 502)).map(row => row[0])).toEqual([500, 501, 502]);
+  });
+
+  it('reuses one long-lived R process across formats and pages', async () => {
+    const rds = await RReader.open(join(dir, 'table.rds'), served);
+    readers.push(rds);
+    expect((await rds.readRows(0, 2)).length).toBe(2);
+    const fst = await RReader.open(join(dir, 'table.fst'), served);
+    readers.push(fst);
+    expect((await fst.readRows(10, 12)).map(row => row[0])).toEqual([11, 12]);
+    await expect(RReader.open(join(dir, 'table.rds'), { ...served, signal: AbortSignal.abort() })).rejects.toThrow();
+    expect((await rds.readRows(1, 2))[0][0]).toBe(2);
+    disposeRWorker();
   });
 
   it('lists only tabular RDA objects, selects exact Unicode names and renders matrices', async () => {

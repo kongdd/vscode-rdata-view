@@ -2,7 +2,7 @@
   "name": "rdata-view",
   "displayName": "R Data View",
   "description": "View R fst, qs2, qdata, rda, rds, CSV, Excel and Arrow tables using a fast, read-only grid.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "publisher": "kongdd",
   "license": "MIT",
   "repository": {
@@ -82,7 +82,7 @@
             "filenamePattern": "*.feather"
           }
         ],
-        "priority": "option"
+        "priority": "default"
       }
     ],
     "commands": [

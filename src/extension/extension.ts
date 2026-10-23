@@ -1,7 +1,12 @@
 import * as vscode from 'vscode';
 import { TableView } from './TableView.js';
+import { disposeRWorker } from './reader/RWorker.js';
 
 const VIEW = 'rdataView.table';
+
+export function deactivate(): void {
+  disposeRWorker();
+}
 
 export function activate(context: vscode.ExtensionContext): void {
   const views = new Set<TableView>();
@@ -25,6 +30,6 @@ export function activate(context: vscode.ExtensionContext): void {
       if (!uri) [uri] = await vscode.window.showOpenDialog({ canSelectMany: false }) ?? [];
       if (uri) await vscode.commands.executeCommand('vscode.openWith', uri, VIEW);
     }),
-    { dispose() { for (const view of views) view.dispose(); views.clear(); } },
+    { dispose() { for (const view of views) view.dispose(); views.clear(); disposeRWorker(); } },
   );
 }

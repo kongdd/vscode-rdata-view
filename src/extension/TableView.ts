@@ -4,13 +4,14 @@ import { basename, extname, join } from 'node:path';
 import { homedir } from 'node:os';
 import { randomBytes } from 'node:crypto';
 import { ArrowFileReader, ArrowStreamError } from './reader/ArrowFileReader.js';
-import { CsvReader } from './reader/CsvReader.js';
 import { RReader } from './reader/RReader.js';
 import { exportCsv } from './exportCsv.js';
 import type { PagedReader } from './paging/PagedReader.js';
 import type { HostMessage, WebviewMessage } from '../shared/messages.js';
 import { CHUNK_SIZE, type FileType } from '../shared/constants.js';
 import type { CellValue } from '../shared/schema.js';
+
+const PAGED_CSV_BYTES = 512 * 1024 * 1024;
 
 function fileType(path: string): FileType {
   const ext = extname(path).slice(1).toLowerCase();
@@ -107,12 +108,17 @@ export class TableView implements vscode.Disposable {
       }
       this.reader?.resume();
       const type = fileType(this.uri.fsPath);
+      const totalBytes = (await stat(this.uri.fsPath)).size;
+      const budget = vscode.workspace.getConfiguration('rdataView').get<number>('pagingThresholdMB', 64) * 1024 * 1024;
       if (!this.reader) {
         const config = vscode.workspace.getConfiguration('rdataView');
         const rOptions = {
           executable: rExecutable(this.uri), script: join(this.root.fsPath, 'dist', 'read-table.R'),
+          server: join(this.root.fsPath, 'dist', 'read-table-server.R'),
           timeout: config.get<number>('r.timeoutSeconds', 120) * 1000,
           signal: controller.signal, selected: this.selected,
+          // 超大 CSV 不整体转换，改为按行 fread（阈值兼顾转换耗时与内存）。
+          paged: type === 'csv' && (budget === 0 || totalBytes > Math.max(budget, PAGED_CSV_BYTES)),
         };
         if (type === 'arrow') {
           try { opened = await ArrowFileReader.open(this.uri.fsPath); }
@@ -121,14 +127,12 @@ export class TableView implements vscode.Disposable {
             opened = await RReader.open(this.uri.fsPath, rOptions);
           }
         } else {
-          opened = type === 'csv' ? await CsvReader.open(this.uri.fsPath, controller.signal) : await RReader.open(this.uri.fsPath, rOptions);
+          opened = await RReader.open(this.uri.fsPath, rOptions);
         }
         controller.signal.throwIfAborted();
         this.reader = opened;
       }
       const reader = this.reader;
-      const totalBytes = (await stat(this.uri.fsPath)).size;
-      const budget = vscode.workspace.getConfiguration('rdataView').get<number>('pagingThresholdMB', 64) * 1024 * 1024;
       this.paged = budget === 0 || Math.max(totalBytes, reader instanceof RReader ? reader.bytes : 0,
         reader.totalRows * Math.max(reader.schema.length, 1) * 32) > budget || reader.totalRows > 100_000;
       let rows: CellValue[][] = [];

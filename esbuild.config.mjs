@@ -8,4 +8,6 @@ await build({
   outfile: 'dist/extension.js',
   bundle: true, platform: 'node', target: 'node18', external: ['vscode'], minify: true,
 });
-await copyFile('src/extension/scripts/read-table.R', 'dist/read-table.R');
+for (const script of ['read-table.R', 'read-table-server.R', 'table-lib.R']) {
+  await copyFile(`src/extension/scripts/${script}`, `dist/${script}`);
+}

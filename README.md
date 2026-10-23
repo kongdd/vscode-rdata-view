@@ -71,7 +71,7 @@ source("scripts/read-arrow-rows.R")
 
    留空时复用 vscode-R 的 `r.rpath.<platform>`，其次查找 `r.consolePath` / `r.rterm.<platform>` 中的 R/arf，最后使用 PATH 中的 R。不把 radian 当成脚本执行器。
 
-3. 资源管理器右键 → **Open with R Data View**，或 **Reopen Editor With… → R Data View**。默认不接管其他扩展的文件关联；可在 VS Code 中设为默认编辑器。
+3. 扩展以 `priority: default` 注册上述全部格式。已有的用户文件关联仍优先；若其他扩展也声明默认，可通过 **Reopen Editor With… → Configure default editor… → R Data View** 指定。也可在资源管理器右键选择 **Open with R Data View**。
 
 保留列宽调整、隐藏/重排/冻结列、冻结行、单元格/范围选择、复制、列配色与统计。分页模式明确禁用全表排序/筛选/搜索/统计；复制最多 10,000 行。CSV 导出在主机端分批写入：小表导出当前筛选/排序结果，大表导出完整原表；不允许覆盖源文件。源数据只读，不写旁车文件。
 

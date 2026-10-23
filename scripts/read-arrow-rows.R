@@ -10,21 +10,11 @@
 #'   col_select = c(site, starts_with("Tair")))
 read_arrow_rows <- function(path, skip = 0, nrows = Inf,
                             col_select = tidyselect::everything()) {
-  whole <- function(x) {
-    is.numeric(x) && length(x) == 1L && !is.na(x) &&
-      is.finite(x) && x >= 0 && x == floor(x) && x <= 2^53 - 1
-  }
-  if (!whole(skip)) rlang::abort("`skip` must be a non-negative whole number.")
-  if (!(whole(nrows) || identical(nrows, Inf))) {
-    rlang::abort("`nrows` must be a non-negative whole number or Inf.")
-  }
-  if (!is.character(path) || length(path) != 1L || is.na(path)) {
-    rlang::abort("`path` must be a single local file path.")
-  }
+  stopifnot(
+    is.numeric(skip), length(skip) == 1L, is.finite(skip), skip >= 0, skip == floor(skip),
+    is.numeric(nrows), length(nrows) == 1L, nrows >= 0, nrows == floor(nrows)
+  )
   parquet <- tolower(tools::file_ext(path)) %in% c("parquet", "pq")
-  if (!parquet && !tolower(tools::file_ext(path)) %in% c("arrow", "feather", "ipc")) {
-    rlang::abort("Expected a Parquet or Arrow IPC/Feather V2 file.")
-  }
 
   input <- arrow::ReadableFile$create(path)
   on.exit(input$close(), add = TRUE)
@@ -49,18 +39,15 @@ read_arrow_rows <- function(path, skip = 0, nrows = Inf,
   ends <- cumsum(counts)
   starts <- ends - counts
   groups <- which(ends > skip & starts < skip + nrows)
-  parts <- list(empty)
-  for (i in groups) {
+  parts <- lapply(groups, function(i) {
     batch <- if (parquet) reader$ReadRowGroup(i - 1L, columns) else {
       reader$get_batch(i - 1L)$SelectColumns(columns)
     }
     offset <- max(skip - starts[[i]], 0)
     size <- min(ends[[i]], skip + nrows) - starts[[i]] - offset
-    parts[[length(parts) + 1L]] <- batch$Slice(offset, size) |>
-      as.data.frame() |>
-      tibble::as_tibble()
-  }
-  dplyr::bind_rows(parts)
+    tibble::as_tibble(batch$Slice(offset, size))
+  })
+  dplyr::bind_rows(empty, parts)
 }
 
 # R arrow exposes batch reads but not their row-count index. Read only IPC
@@ -70,20 +57,14 @@ read_arrow_rows <- function(path, skip = 0, nrows = Inf,
   on.exit(close(input), add = TRUE)
   size <- file.info(path)$size
   read_at <- function(offset, nbytes) {
-    if (offset < 0 || nbytes < 0 || offset + nbytes > size) {
-      rlang::abort("Invalid IPC metadata range.")
-    }
+    stopifnot(offset >= 0, nbytes >= 0, offset + nbytes <= size)
     seek(input, offset, origin = "start")
-    bytes <- readBin(input, "raw", n = nbytes)
-    if (length(bytes) != nbytes) rlang::abort("Truncated IPC metadata.")
-    bytes
+    readBin(input, "raw", n = nbytes)
   }
   uint <- function(bytes, offset, width) {
-    if (offset < 0 || offset + width > length(bytes)) {
-      rlang::abort("Invalid IPC metadata offset.")
-    }
+    stopifnot(offset >= 0, offset + width <= length(bytes))
     value <- sum(as.integer(bytes[offset + seq_len(width)]) * 256^(seq_len(width) - 1L))
-    if (value > 2^53 - 1) rlang::abort("IPC integer exceeds R's exact numeric range.")
+    stopifnot(value <= 2^53 - 1)
     value
   }
   field <- function(bytes, table, index) {
@@ -96,9 +77,7 @@ read_arrow_rows <- function(path, skip = 0, nrows = Inf,
     if (offset == 0) NA_real_ else table + offset
   }
 
-  tail <- read_at(size - 10L, 10L)
-  if (rawToChar(tail[5:10]) != "ARROW1") rlang::abort("Expected an Arrow IPC file, not a stream.")
-  footer_size <- uint(tail, 0, 4L)
+  footer_size <- uint(read_at(size - 10L, 4L), 0, 4L)
   footer <- read_at(size - 10L - footer_size, footer_size)
   slot <- field(footer, uint(footer, 0, 4L), 3L)
   if (is.na(slot)) return(numeric())
