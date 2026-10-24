@@ -75,6 +75,15 @@ describe('CSV export', () => {
     await expect(exportCsv(reader, path, path, new AbortController().signal, () => {})).rejects.toThrow('source');
   });
 
+  it('prevents a query result from overwriting any ancestor source', async () => {
+    const source = join(dir, 'original.csv');
+    await writeFile(source, 'original');
+    await expect(exportCsv(stub([[1]]), join(dir, 'query.arrow'), source,
+      new AbortController().signal, () => {}, undefined, [source])).rejects.toThrow('source');
+    expect(await readFile(source, 'utf8')).toBe('original');
+    expect((await readdir(dir)).filter(name => name.startsWith('.rdata-export'))).toEqual([]);
+  });
+
   it('keeps an existing destination intact on cancellation and rejects invalid order', async () => {
     const reader = stub([[1], [2]]);
     const path = join(dir, 'source.csv');

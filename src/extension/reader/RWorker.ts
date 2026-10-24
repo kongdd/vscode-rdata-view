@@ -130,6 +130,15 @@ export function runR(
   return current.worker.request(request, signal, timeout, true, idleTimeoutSeconds);
 }
 
+/** 提前检查/启动工作进程，与文件传输和元数据读取重叠；调用方无需等待。 */
+export async function warmR(
+  executable: string, script: string, timeout: number, idleTimeoutSeconds = 300, dplyr = false,
+): Promise<void> {
+  const reply = await runR(executable, script, ['', '', '', 0, 0, 0, 0, '', '', 'ping', dplyr ? '1' : ''].join('\t'),
+    undefined, timeout, idleTimeoutSeconds);
+  if (reply !== 'ok') throw new Error(reply.replace(/^error\t/, ''));
+}
+
 /** 只释放现有进程中的表；回复后再安排空闲 GC，不阻塞文件切换。 */
 export async function releaseR(executable: string, script: string, key: string, timeout: number): Promise<void> {
   if (current?.key !== `${executable}\0${script}`) return;

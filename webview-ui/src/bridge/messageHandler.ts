@@ -13,7 +13,16 @@ export function setupMessageHandler(): () => void {
       case 'INIT': gridStore.init(message.payload); break;
       case 'DATA_VISIBILITY': gridStore.setDataVisible(message.payload.visible); break;
       case 'LOADING': uiStore.setLoading(message.payload.active, message.payload.message); break;
-      case 'ERROR': if (!message.payload.requestId) uiStore.setError(message.payload.message); break;
+      case 'ERROR':
+        if (!message.payload.requestId) {
+          uiStore.setError(message.payload.message);
+          gridStore.setDataVisible(true);
+        }
+        break;
+      case 'QUERY_DONE':
+        uiStore.queryRunning = false;
+        if (message.payload.error) uiStore.setError(message.payload.error);
+        break;
       case 'EXPORT_PROGRESS': uiStore.exportProgress = message.payload.pct; break;
       case 'EXPORT_DONE':
         uiStore.setExportDone(message.payload.path);

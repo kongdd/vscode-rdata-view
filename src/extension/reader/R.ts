@@ -13,7 +13,7 @@ import type { CellValue } from '../../shared/schema.js';
 const exec = promisify(execFile);
 export interface ROptions {
   executable: string; script: string; timeout: number; server?: string;
-  signal?: AbortSignal; selected?: string; paged?: boolean; idleTimeoutSeconds?: number;
+  signal?: AbortSignal; selected?: string; paged?: boolean; idleTimeoutSeconds?: number; filter?: string;
 }
 
 /** 一次扫描得到换行数与是否含引号（约 4GB/s）。带引号时行号与记录号不一致，需整体转换。 */
@@ -36,7 +36,8 @@ async function prepare(path: string, options: ROptions, start = 0, end = 1, extr
       // 常驻进程：一次请求完成同样的转换，省去启动与包加载。
       const request = [path, output, options.selected ?? '', start, end,
         extra.RDATA_PAGED === '1' ? '1' : '0', extra.RDATA_SAMPLE === '1' ? '1' : '0',
-        extra.RDATA_CLASSES ?? '', extra.RDATA_CACHE ?? ''].join('\t');
+        extra.RDATA_CLASSES ?? '', extra.RDATA_CACHE ?? '', extra.RDATA_QUERY ? 'query' : extra.RDATA_FILTER ? 'filter' : '',
+        extra.RDATA_FILTER ?? '', extra.RDATA_QUERY ?? ''].join('\t');
       const reply = await runR(options.executable, options.server, request, options.signal, options.timeout, options.idleTimeoutSeconds);
       if (reply !== 'ok') throw new Error(reply.replace(/^error\t/, ''));
     } else {
@@ -63,6 +64,23 @@ async function prepare(path: string, options: ROptions, start = 0, end = 1, extr
   }
 }
 
+export interface RQueryResult { path: string; dispose: () => Promise<void> }
+
+export async function runRQuery(
+  path: string, options: ROptions, code: string, extra: Record<string, string> = {},
+): Promise<RQueryResult> {
+  const before = await fileStamp(path);
+  const result = await prepare(path, options, 0, 0, {
+    ...(options.filter ? { RDATA_FILTER: Buffer.from(options.filter, 'utf8').toString('hex') } : {}),
+    ...extra, RDATA_QUERY: Buffer.from(code, 'utf8').toString('hex'),
+  });
+  try {
+    options.signal?.throwIfAborted();
+    if (await fileStamp(path) !== before) throw new Error('File changed during query. Reopen the editor.');
+    return result;
+  } catch (error) { await result.dispose(); throw error; }
+}
+
 /** fst 真正按行读取；序列化对象驻留常驻 R，仅将当前页写入 Arrow。 */
 export class RReader extends FilePager {
   choices: string[] = [];
@@ -73,15 +91,17 @@ export class RReader extends FilePager {
   private dir = '';
   private controller?: AbortController;
   private readonly fst: boolean;
+  private readonly filtered: boolean;
   private readonly cacheKey: string;
   private ranged: boolean;
 
   private constructor(path: string, private options: ROptions) {
     super(path);
     this.fst = extname(path).toLowerCase() === '.fst';
+    this.filtered = /\.(arrow|feather)$/i.test(path) && !!options.filter?.trim();
     this.ranged = !this.fst && options.paged === true;
     // CSV 仍走原有磁盘转换/行区间路径，不把大文本整表常驻冒充分页。
-    this.cacheKey = options.server && /\.(rds|rda|rdata|qs2|qdata|xlsx)$/i.test(path) ? randomUUID() : '';
+    this.cacheKey = options.server && (this.filtered || /\.(rds|rda|rdata|qs2|qdata|xlsx)$/i.test(path)) ? randomUUID() : '';
   }
 
   static async open(path: string, options: ROptions): Promise<RReader> {
@@ -90,11 +110,11 @@ export class RReader extends FilePager {
     const before = await fileStamp(path);
     try {
       if (reader.ranged && await reader.openRanged(options, before)) return reader;
-      const file = await prepare(path, options, 0, reader.cacheKey ? 0 : 1, reader.cacheExtra);
+      const file = await prepare(path, options, 0, reader.cacheKey || reader.filtered ? 0 : 1, reader.cacheExtra);
       reader.cleanup = file.dispose;
       reader.arrow = await ArrowFileReader.open(file.path);
       reader.schema = reader.arrow.schema;
-      reader.totalRows = reader.fst || reader.cacheKey ? Number(await readFile(file.path + '.rows', 'utf8')) : reader.arrow.totalRows;
+      reader.totalRows = reader.fst || reader.cacheKey || reader.filtered ? Number(await readFile(file.path + '.rows', 'utf8')) : reader.arrow.totalRows;
       if (!Number.isSafeInteger(reader.totalRows) || reader.totalRows < 0) throw new Error('Invalid R row count');
       const names = (await readFile(file.path + '.names', 'utf8')).trimEnd().split('\n').map(name => Buffer.from(name, 'hex').toString('utf8'));
       reader.selected = names.shift() ?? '';
@@ -102,7 +122,7 @@ export class RReader extends FilePager {
       reader.options = { ...options, selected: reader.selected };
       reader.bytes = reader.cacheKey ? Number(await readFile(file.path + '.bytes', 'utf8')) : (await stat(file.path)).size;
       if (await fileStamp(path) !== before) throw new Error('File changed during R conversion. Reopen the editor.');
-      if (reader.fst || reader.cacheKey) {
+      if (reader.fst || reader.cacheKey || reader.filtered) {
         await reader.arrow.dispose();
         reader.arrow = undefined;
         await file.dispose();
@@ -140,7 +160,7 @@ export class RReader extends FilePager {
   }
 
   protected async loadRows(start: number, end: number): Promise<CellValue[][]> {
-    if (!this.fst && !this.ranged && !this.cacheKey) return this.arrow!.readRows(start, end);
+    if (!this.fst && !this.ranged && !this.cacheKey && !this.filtered) return this.arrow!.readRows(start, end);
     if (start === end) return [];
     this.controller = new AbortController();
     try {
@@ -160,7 +180,17 @@ export class RReader extends FilePager {
   }
 
   private get classFile(): string { return join(this.dir, 'classes.rds'); }
-  private get cacheExtra(): Record<string, string> { return this.cacheKey ? { RDATA_CACHE: this.cacheKey } : {}; }
+  private get cacheExtra(): Record<string, string> {
+    return {
+      ...(this.cacheKey ? { RDATA_CACHE: this.cacheKey } : {}),
+      ...(this.filtered ? { RDATA_FILTER: Buffer.from(this.options.filter!.trim(), 'utf8').toString('hex') } : {}),
+    };
+  }
+
+  async query(code: string, signal: AbortSignal): Promise<RQueryResult> {
+    await this.readRows(0, 0); // 校验源文件版本和生命周期，避免查询已过期的 R 缓存。
+    return runRQuery(this.path, { ...this.options, signal }, code, this.cacheExtra);
+  }
 
   resume(): void { super.resume(); this.arrow?.resume(); }
   protected cancel(): void { this.controller?.abort(); }

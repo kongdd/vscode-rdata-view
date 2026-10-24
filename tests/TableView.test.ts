@@ -7,12 +7,13 @@ import type * as vscode from 'vscode';
 import type { HostMessage, WebviewMessage } from '../src/shared/messages.js';
 import type { PagedReader } from '../src/extension/reader/Paged.js';
 
-const { settings } = vi.hoisted(() => ({ settings: { threshold: 64, idleTimeoutSeconds: 60 } }));
+const { settings } = vi.hoisted(() => ({ settings: { threshold: 64, idleTimeoutSeconds: 60, trusted: true } }));
 vi.mock('vscode', async () => {
   const { join } = await import('node:path');
   return {
     Uri: { joinPath: (root: { fsPath: string }, ...parts: string[]) => ({ fsPath: join(root.fsPath, ...parts), toString() { return this.fsPath; } }) },
     workspace: {
+      get isTrusted() { return settings.trusted; },
       getConfiguration: () => ({ get: (name: string, fallback: unknown) => {
         if (name === 'pagingThresholdMB') return settings.threshold;
         if (name === 'r.idleTimeoutSeconds') return settings.idleTimeoutSeconds;
@@ -26,6 +27,8 @@ vi.mock('vscode', async () => {
 import { TableView } from '../src/extension/TableView.js';
 import { ArrowFileReader } from '../src/extension/reader/Arrow.js';
 import { RReader } from '../src/extension/reader/R.js';
+import * as rBackend from '../src/extension/reader/R.js';
+import * as rWorker from '../src/extension/reader/RWorker.js';
 
 const uri = (fsPath: string) => ({ fsPath, scheme: 'file' }) as vscode.Uri;
 let dir: string;
@@ -35,7 +38,7 @@ let visible: boolean;
 let changeVisibility: () => void;
 let receive: (message: WebviewMessage) => void;
 
-function open(path: string): TableView {
+function open(path: string, options?: ConstructorParameters<typeof TableView>[3]): TableView {
   visible = true;
   const panel = {
     get visible() { return visible; },
@@ -47,7 +50,7 @@ function open(path: string): TableView {
     },
     onDidChangeViewState: (handler: () => void) => { changeVisibility = handler; },
   } as unknown as vscode.WebviewPanel;
-  return view = new TableView(uri(path), panel, uri(resolve('.')));
+  return view = new TableView(uri(path), panel, uri(resolve('.')), options);
 }
 const init = () => messages.filter(message => message.type === 'INIT').at(-1)!;
 
@@ -56,6 +59,8 @@ beforeEach(async () => {
   messages = [];
   settings.threshold = 64;
   settings.idleTimeoutSeconds = 60;
+  settings.trusted = true;
+  vi.spyOn(rWorker, 'warmR').mockResolvedValue();
 });
 afterEach(async () => {
   const reader = view?.['reader'];
@@ -207,6 +212,113 @@ describe('single read-only table provider', () => {
     await vi.waitFor(() => expect(inits()).toHaveLength(2), { timeout: 60_000 });
     expect(inits()[1].payload).toMatchObject({ selected: 'm', choices: ['t', 'm'] });
     expect(inits()[1].payload.schema[0].name).toBe('V1');
+  });
+
+  it('prewarms R on file open before READY, but keeps unfiltered Arrow independent of R', async () => {
+    const path = join(dir, 'table.rds');
+    open(path);
+    expect(rWorker.warmR).toHaveBeenCalledOnce();
+    expect(messages).toEqual([]);
+    view.dispose();
+    vi.mocked(rWorker.warmR).mockClear();
+    open(resolve('tests/fixtures/lz4.feather'));
+    expect(rWorker.warmR).not.toHaveBeenCalled();
+    await view['receive']({ type: 'READY' });
+    await view['receive']({ type: 'PREPARE_R' });
+    expect(rWorker.warmR).toHaveBeenCalledWith('R', expect.any(String), 120_000, 60, true);
+  });
+
+  it('switches Arrow filters to R and clears back to TS without replacing the source', async () => {
+    const reader = {
+      totalRows: 2, schema: [{ name: 'id', index: 0, inferredType: 'number', nullable: false }],
+      readRows: async () => [[501], [503]], resume() {}, suspend: vi.fn(async () => {}), dispose: vi.fn(async () => {}),
+    } satisfies PagedReader;
+    const opening = vi.spyOn(RReader, 'open').mockResolvedValue(reader as unknown as RReader);
+    open(resolve('tests/fixtures/lz4.feather'));
+    await view['receive']({ type: 'READY' });
+    const original = view['reader'];
+    await view['receive']({ type: 'APPLY_DPLYR_FILTER', payload: { expression: '  id > 500  ' } });
+    expect(opening).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ filter: 'id > 500' }));
+    expect(init().payload).toMatchObject({ dplyrFilter: 'id > 500', paged: true, totalRows: 2, rows: [] });
+    expect(view['reader']).toBe(reader);
+    expect(view['reader']).not.toBe(original);
+    await view['receive']({ type: 'APPLY_DPLYR_FILTER', payload: { expression: ' \t ' } });
+    expect(view['reader']).toBeInstanceOf(ArrowFileReader);
+    expect(reader.dispose).toHaveBeenCalledOnce();
+    expect(init().payload).toMatchObject({ dplyrFilter: '', totalRows: 1024 });
+  });
+
+  it('keeps the previous Arrow view after a bad filter and rejects untrusted filters', async () => {
+    vi.spyOn(RReader, 'open').mockRejectedValue(new Error('Invalid filter'));
+    open(resolve('tests/fixtures/lz4.feather'));
+    await view['receive']({ type: 'READY' });
+    const reader = view['reader'];
+    await expect(view['receive']({ type: 'APPLY_DPLYR_FILTER', payload: { expression: 'id >' } })).rejects.toThrow('Invalid filter');
+    expect(view['reader']).toBe(reader);
+    expect(await reader!.readRows(0, 1)).toHaveLength(1);
+    settings.trusted = false;
+    await expect(view['receive']({ type: 'APPLY_DPLYR_FILTER', payload: { expression: 'TRUE' } })).rejects.toThrow('trusted');
+    expect(RReader.open).toHaveBeenCalledOnce();
+  });
+
+  it('does not publish stale TS pages after switching to a filtered reader', async () => {
+    settings.threshold = 0;
+    open(resolve('tests/fixtures/lz4.feather'));
+    await view['receive']({ type: 'READY' });
+    let finish!: (rows: number[][]) => void;
+    vi.spyOn(view['reader']!, 'readRows').mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    const pending = view['receive']({ type: 'REQUEST_CHUNK', payload: { requestId: 'old', startRow: 0, endRow: 1 } });
+    vi.spyOn(RReader, 'open').mockResolvedValue({
+      totalRows: 0, schema: [], readRows: async () => [], resume() {}, suspend: async () => {}, dispose: async () => {},
+    } as unknown as RReader);
+    await view['receive']({ type: 'APPLY_DPLYR_FILTER', payload: { expression: 'FALSE' } });
+    finish([[999]]);
+    await pending;
+    expect(messages.some(message => message.type === 'CHUNK' && message.payload.requestId === 'old')).toBe(false);
+  });
+
+  it('opens a successful R command in a new view and transfers ownership of its temporary file', async () => {
+    const result = { path: join(dir, 'query.arrow'), dispose: vi.fn(async () => {}) };
+    const run = vi.spyOn(rBackend, 'runRQuery').mockResolvedValue(result);
+    const openQuery = vi.fn();
+    open(resolve('tests/fixtures/lz4.feather'), { openQuery });
+    await view['receive']({ type: 'READY' });
+    const reader = view['reader'];
+    await view['receive']({ type: 'EXECUTE_R_QUERY', payload: { code: 'df |> collect() |> as.data.table()' } });
+    expect(run).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ signal: expect.any(AbortSignal) }), expect.any(String));
+    expect(openQuery).toHaveBeenCalledWith(result, 'Query — lz4.feather', [resolve('tests/fixtures/lz4.feather')]);
+    expect(result.dispose).not.toHaveBeenCalled();
+    expect(view['reader']).toBe(reader);
+    expect(messages.at(-1)).toEqual({ type: 'QUERY_DONE', payload: {} });
+  });
+
+  it.each(['hide', 'cancel', 'dispose'])('cancels commands on %s and removes late results instead of opening a tab', async action => {
+    let finish!: (result: rBackend.RQueryResult) => void;
+    vi.spyOn(rBackend, 'runRQuery').mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    const openQuery = vi.fn();
+    open(resolve('tests/fixtures/lz4.feather'), { openQuery });
+    await view['receive']({ type: 'READY' });
+    const pending = view['receive']({ type: 'EXECUTE_R_QUERY', payload: { code: 'df |> collect() |> as.data.table()' } });
+    await vi.waitFor(() => expect(finish).toBeDefined());
+    if (action === 'hide') { visible = false; changeVisibility(); }
+    else if (action === 'cancel') await view['receive']({ type: 'QUERY_CANCEL' });
+    else view.dispose();
+    const result = { path: join(dir, 'late.arrow'), dispose: vi.fn(async () => {}) };
+    finish(result);
+    await pending;
+    expect(result.dispose).toHaveBeenCalledOnce();
+    expect(openQuery).not.toHaveBeenCalled();
+  });
+
+  it('rejects untrusted commands and cleans query files after a result view closes', async () => {
+    const cleanup = vi.fn(async () => {});
+    open(resolve('tests/fixtures/lz4.feather'), { cleanup, title: 'Query result', openQuery: vi.fn() });
+    await view['receive']({ type: 'READY' });
+    settings.trusted = false;
+    await view['receive']({ type: 'EXECUTE_R_QUERY', payload: { code: 'df' } });
+    expect(messages.at(-1)).toMatchObject({ type: 'QUERY_DONE', payload: { error: expect.stringContaining('trusted') } });
+    view.dispose();
+    await vi.waitFor(() => expect(cleanup).toHaveBeenCalledOnce());
   });
 
   it('finishes a cancelled export dialog without leaving UI progress active', async () => {

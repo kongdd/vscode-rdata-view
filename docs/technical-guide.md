@@ -7,8 +7,8 @@
 - 小表完整加载，默认阈值 64 MiB、最多 100,000 行；内存估算考虑行列规模，不只看压缩文件大小。
 - 大表按视口加载，界面与 Arrow 批次缓存有界；单个压缩 batch 仍需整体解压。
 - **QS2/QDATA/RDS/RData/XLSX 必须完整解码并驻留 R**，分页只减少传输量，不保证整表内存有界。
-- 隐藏时取消加载和导出，释放表引用及页缓存；恢复时按需重新解码。临时页文件读完即删，关闭时清理句柄与临时文件。
-- R 进程按需启动、复用，默认空闲 300 秒退出。请求结束或后台 GC 完成后重新计时；修改超时设置须重新打开表格。
+- 隐藏时取消加载、导出和 R 命令，释放表引用及页缓存；恢复时按需重新解码。临时页文件读完即删，查询结果文件由新标签页持有，关闭后清理。
+- R 文件打开面板时即预热工作进程，与界面资源传输重叠；Arrow 在应用筛选或聚焦命令框时预热。R 进程按需启动、复用，默认空闲 300 秒退出。请求结束或后台 GC 完成后重新计时；修改超时设置须重新打开表格。
 - 隐藏时先释放表引用，空闲 1 秒后执行 GC；新请求会推迟待执行的 GC，但不能中断已开始的 GC。
 - `rm()` / `gc()` 不保证 RSS 下降；进程退出才释放其持有的全部内存。取消加载、请求超时或扩展停用也会结束 R 进程。
 
@@ -34,9 +34,17 @@ R 路径留空时依次使用 vscode-R 的 `r.rpath.<platform>`、`r.consolePath
 - `Row…` 输入从 1 开始的行号，回车或点击 `Go` 跳转；按当前筛选、排序后的视图计数。
 - 支持调整、重排、隐藏、冻结列和冻结行，以及区域选择、复制和列配色。列头右键打开操作菜单，`Columns` 恢复隐藏列。
 - 筛选默认排除空值；列统计基于完整原列，不受筛选影响。
-- 分页模式禁用全表排序、筛选、搜索和统计；冻结、隐藏仍可用。
-- 复制最多 10,000 行，超限时建议导出。CSV 分批导出：小表导出当前视图，大表导出完整原表；不覆盖源文件，取消或失败不破坏已有目标。
+- 分页模式的前端列菜单禁用全表排序、筛选、搜索和统计；冻结、隐藏仍可用。Arrow 专用筛选框可执行全文件 dplyr 条件，清空后切回 TS。
+- 复制最多 10,000 行，超限时建议导出。CSV 分批导出：小表导出当前视图，大表导出当前 reader 的全部行（包含已应用的 dplyr 条件）；不覆盖源文件或上游查询文件，取消或失败不破坏已有目标。
 - 源文件只读，不写旁车文件。
+
+### R 筛选与命令
+
+- Arrow 筛选框接受 `dplyr::filter()` 参数中的条件，不输入外层 `filter()`。条件以 UTF-8 十六进制通过参数传递；仅使用 Arrow 可翻译的表达式，不隐式整表 `collect()`。
+- R 只缓存惰性查询和当前批次；顺序翻页复用单线程扫描游标以保证行序，回跳时重扫。初始总行数需执行筛选计数，尾页可能扫描全表，压缩批次解压与预读不受页大小严格限制。
+- 执行命令前默认加载 `data.table`、`magrittr`、`dplyr`、`lubridate`（依次加载，同名函数按 R 搜索路径解析）。命令框可执行多条 R 语句，`df` 为当前对象 / 工作表或已应用 dplyr 条件的 Arrow 查询；不包含前端搜索、排序和列筛选。最后一个表达式可返回 `data.frame`（包括 tibble、data.table）或矩阵，无需强制转换；其他类型会报错。结果写入临时 Arrow，在同一编辑器组的新标签页中分页显示，可切换而不分屏。
+- 命令中的 `collect()`、排序和任意 R 运算可能整表物化；结果临时文件也保存完整结果。执行期间可取消；隐藏、关闭或切换数据会取消，过期结果不会新开标签页。打开结果后再关闭原表，不影响结果标签页。
+- 命令是可信工作区中的本地 R 代码，不是沙箱；扩展本身不改写源文件，但用户 R 代码可以读写文件。`print()` / `cat()` 的普通输出会被丢弃，避免污染工作进程协议。
 
 ## 格式读写与翻页性能
 
@@ -49,7 +57,7 @@ R 路径留空时依次使用 vscode-R 的 `r.rpath.<platform>`、`r.consolePath
 | 首页／中页／尾页 | 打开后依次读取对应页，不含加载；首屏数据就绪耗时为加载加首页读取 |
 | 写入／完整读取 | 纯 R 格式读写；读取含 `as.data.table()` 和 `sum(value)`，未验证所有列完全物化 |
 
-- Arrow / Feather 无需 R；冷、热加载均为重新打开 reader，不代表全新 Node.js 进程启动。
+- 上表 Arrow / Feather 为无筛选的 TS 路径，无需 R；冷、热加载均为重新打开 reader，不代表全新 Node.js 进程启动。
 - 仅测 reader，不含 Webview 通信、预取和绘制；未清理系统文件缓存。CSV 样例不足 512 MiB，走整表转换。
 - 写入与完整读取来自此前轮次，加载与翻页为最新复测，不宜跨轮次推断优化收益。
 - DuckDB 仅作格式对照：R duckdb 1.5.5（conda `r-4.5`），写入用 `dbWriteTable()`，读取用全表 `SELECT *`，均含连接建立。
@@ -57,6 +65,8 @@ R 路径留空时依次使用 vscode-R 的 `r.rpath.<platform>`、`r.consolePath
 ```bash
 RDATA_PERF=1 RDATA_TEST_R=arf npx vitest run tests/test-perform.test.ts
 arf --vanilla --slave -f scripts/bench-format-io.R
+arf --vanilla -f tests/bench-arrow-dplyr.R
+arf --vanilla -f scripts/bench-arrow-dplyr.R
 ```
 
 reader 原始结果：`data/test-perform.json`；[历史优化与传输实验](performance-notes.md)。
@@ -99,5 +109,6 @@ F5 启动 Extension Development Host，VSIX 输出到 `release/`。
 
 ```bash
 RDATA_TEST_R=/opt/homebrew/bin/arf npm test
-RDATA_TEST_ARROW=/path/to/large.arrow npm test  # 可选：真实大 Arrow 文件
+RDATA_TEST_ARROW=/path/to/large.arrow npm test  # 可选：真实大 Arrow 文件（TS reader）
+RDATA_TEST_R=arf RDATA_TEST_ARROW=data/big.arrow npm test  # 另测生成数据的 R 筛选和命令
 ```

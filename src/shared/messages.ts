@@ -11,6 +11,7 @@ export interface InitPayload {
   paged: boolean;
   choices: string[];
   selected: string;
+  dplyrFilter?: string;
 }
 
 export type HostMessage =
@@ -20,11 +21,16 @@ export type HostMessage =
   | { type: 'LOADING'; payload: { active: boolean; message?: string } }
   | { type: 'ERROR'; payload: { requestId?: string; message: string } }
   | { type: 'EXPORT_PROGRESS'; payload: { pct: number } }
-  | { type: 'EXPORT_DONE'; payload: { path?: string; error?: string } };
+  | { type: 'EXPORT_DONE'; payload: { path?: string; error?: string } }
+  | { type: 'QUERY_DONE'; payload: { error?: string } };
 
 export type WebviewMessage =
   | { type: 'READY' }
   | { type: 'SELECT_TABLE'; payload: { name: string } }
+  | { type: 'APPLY_DPLYR_FILTER'; payload: { expression: string } }
+  | { type: 'PREPARE_R' }
+  | { type: 'EXECUTE_R_QUERY'; payload: { code: string } }
+  | { type: 'QUERY_CANCEL' }
   | { type: 'REQUEST_CHUNK'; payload: { requestId: string; startRow: number; endRow: number } }
   | { type: 'EXPORT'; payload: { order?: number[] } }
   | { type: 'EXPORT_CANCEL' }

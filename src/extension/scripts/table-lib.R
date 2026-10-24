@@ -128,3 +128,94 @@ read_table <- function(input, output, ...) {
   write_table(load_table(input, output, ...), output)
   invisible(TRUE)
 }
+
+# 用户表达式以 UTF-8 十六进制传递，不插入 shell 或工作进程协议。
+decode_text <- function(encoded) {
+  bytes <- substring(encoded, seq.int(1L, nchar(encoded), 2L), seq.int(2L, nchar(encoded), 2L))
+  text <- rawToChar(as.raw(strtoi(bytes, 16L)))
+  Encoding(text) <- "UTF-8"
+  text
+}
+
+# Dataset 不会为不支持的表达式静默整表 collect；翻译失败直接报错。
+open_arrow_filter <- function(input, encoded) {
+  need("dplyr")
+  expressions <- as.list(rlang::parse_expr(paste0("list(", decode_text(encoded), "\n)")))[-1L]
+  if (!length(expressions) || any(nzchar(names(expressions)))) stop("Enter unnamed dplyr::filter() conditions")
+  conditions <- lapply(expressions, function(expr) {
+    # Arrow 的常量筛选须显式构造 Expression（包括空文件）。
+    if (is.logical(expr) && length(expr) == 1L) return(arrow::Expression$scalar(expr))
+    rlang::new_quosure(expr, env = asNamespace("dplyr"))
+  })
+  dataset <- arrow::open_dataset(input, format = "ipc")
+  query <- rlang::inject(dplyr::filter(dataset, !!!conditions))
+  count <- dplyr::collect(dplyr::summarise(query, n = dplyr::n()))$n
+  state <- new.env(parent = emptyenv())
+  state$query <- query
+  state$rows <- as.numeric(count)
+  state$empty <- tibble::as_tibble(arrow::Table$create(schema = dataset$schema))
+  state$reader <- NULL
+  state$batch <- NULL
+  state$position <- 0
+  state
+}
+
+# 只保留当前批次；连续翻页/导出复用扫描游标，向前跳转则重新扫描。
+# 筛选结果的行号不是原文件行号；尾页可能需要扫描全表。
+write_arrow_filter <- function(state, output, start, end) {
+  start <- as.numeric(start)
+  end <- as.numeric(end)
+  if (start == end) {
+    writeLines(as.character(state$rows), paste0(output, ".rows"))
+    writeLines("0", paste0(output, ".bytes"))
+  }
+  parts <- list(state$empty)
+  if (start < end) {
+    if (is.null(state$reader) || start < state$position) {
+      # 单线程保证文件行序，避免并行查询重排批次导致跨页重复/遗漏。
+      state$reader <- arrow::Scanner$create(state$query, use_threads = FALSE)$ToRecordBatchReader()
+      state$batch <- NULL
+      state$position <- 0
+    }
+    while (start < end) {
+      if (is.null(state$batch)) state$batch <- state$reader$read_next_batch()
+      if (is.null(state$batch)) break
+      next_row <- state$position + state$batch$num_rows
+      if (start < next_row) {
+        size <- min(end, next_row) - start
+        parts[[length(parts) + 1L]] <- tibble::as_tibble(
+          state$batch$Slice(start - state$position, size)
+        )
+        start <- start + size
+        if (start == end) break
+      }
+      state$position <- next_row
+      state$batch <- NULL
+    }
+  }
+  write_table(result(normalize(dplyr::bind_rows(parts))), output)
+}
+
+# 显式执行用户 R 代码：df 是当前表，Arrow 保持惰性，结果须为可查看的表或矩阵。
+# 与只读分页不同，用户 collect()/排序/聚合可能物化整表并产生完整临时文件。
+execute_query <- function(input, output, selected, encoded, filter = "", cached = NULL) {
+  for (pkg in c("data.table", "magrittr", "dplyr", "lubridate")) {
+    need(pkg)
+    suppressPackageStartupMessages(library(pkg, character.only = TRUE))
+  }
+  env <- new.env(parent = globalenv())
+  env$df <- if (grepl("\\.(arrow|feather)$", input, ignore.case = TRUE)) {
+    if (!is.null(cached) && nzchar(filter)) cached$query else if (nzchar(filter)) {
+      open_arrow_filter(input, filter)$query
+    } else arrow::open_dataset(input, format = "ipc")
+  } else {
+    x <- if (is.null(cached)) load_table(input, selected = selected) else cached
+    tibble::as_tibble(x$table)
+  }
+  # print()/cat() 不得污染常驻进程 stdout 的逐行协议。
+  con <- file(nullfile(), "w")
+  sink(con)
+  on.exit({ sink(); close(con) }, add = TRUE)
+  value <- eval(parse(text = decode_text(encoded), keep.source = FALSE), envir = env)
+  write_table(result(normalize(value)), output)
+}

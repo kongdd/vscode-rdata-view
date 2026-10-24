@@ -63,6 +63,7 @@ class GridStore {
   filters = $state<FilterSpec[]>([]);
   sort = $state<SortSpec | null>(null);
   globalSearch = $state('');
+  dplyrFilter = $state('');
   selectedCell = $state<{ row: number; col: number } | null>(null);
   selectedRange = $state<{ r1: number; c1: number; r2: number; c2: number } | null>(null);
   selectedRow = $state<number | null>(null);
@@ -85,14 +86,17 @@ class GridStore {
   private end = 50;
 
   init(payload: InitPayload): void {
-    const sameTable = this.fileName === payload.fileName && this.selectedSheet === payload.selected;
+    const sameTable = this.fileName === payload.fileName && this.selectedSheet === payload.selected &&
+      this.dplyrFilter === (payload.dplyrFilter ?? '');
     this.resetData();
     Object.assign(this, {
       fileName: payload.fileName, fileType: payload.fileType, totalRows: payload.totalRows,
       totalBytes: payload.totalBytes, schema: payload.schema, paged: payload.paged,
-      availableSheets: payload.choices, selectedSheet: payload.selected,
+      availableSheets: payload.choices, selectedSheet: payload.selected, dplyrFilter: payload.dplyrFilter ?? '',
     });
     if (!sameTable) {
+      this.start = 0;
+      this.end = 50;
       this.filters = [];
       this.sort = null;
       this.globalSearch = '';
@@ -138,6 +142,17 @@ class GridStore {
       uiStore.setLoading(true, 'Opening table…');
       postMessage({ type: 'SELECT_TABLE', payload: { name } });
     }
+  }
+
+  applyDplyrFilter(expression: string): void {
+    if (this.fileType !== 'arrow') return;
+    // 保留旧视图，语法错误时可继续浏览；INIT 成功后再清空数据与视图设置。
+    this.epoch++;
+    cancelPages();
+    this.pending.clear();
+    this.failed.clear();
+    uiStore.setLoading(true, expression.trim() ? 'Filtering with R / dplyr…' : 'Opening Arrow…');
+    postMessage({ type: 'APPLY_DPLYR_FILTER', payload: { expression: expression.trim() } });
   }
 
   getCell(row: number, col: number): CellValue {

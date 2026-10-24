@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { EventEmitter } from 'node:events';
-import { disposeRWorker, releaseR, runR } from '../src/extension/reader/RWorker.js';
+import { disposeRWorker, releaseR, runR, warmR } from '../src/extension/reader/RWorker.js';
 
 vi.mock('node:child_process', () => ({ spawn: vi.fn() }));
 const processes: ReturnType<typeof fakeProcess>[] = [];
@@ -37,6 +37,21 @@ beforeEach(() => {
   });
 });
 afterEach(() => { disposeRWorker(); vi.useRealTimers(); vi.clearAllMocks(); });
+
+it('prewarms R before a queued read and reuses the same process', async () => {
+  const warming = warmR('R', 'server.R', 120_000, 60, true);
+  const reading = request();
+  await Promise.resolve();
+  expect(spawn).toHaveBeenCalledOnce();
+  expect(processes[0].stdin.write).toHaveBeenLastCalledWith(expect.stringContaining('\tping\t1\n'));
+  reply();
+  await warming;
+  await Promise.resolve();
+  expect(processes[0].stdin.write).toHaveBeenLastCalledWith('read\n');
+  reply();
+  await reading;
+  expect(spawn).toHaveBeenCalledOnce();
+});
 
 it('resets the idle timeout on every request, including long reads', async () => {
   await read();

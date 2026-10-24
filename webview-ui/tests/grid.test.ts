@@ -136,6 +136,31 @@ describe('row navigation', () => {
   });
 });
 
+describe('Arrow dplyr filters', () => {
+  it('submits conditions without discarding the current view before success', () => {
+    gridStore.init({ ...payload(), fileType: 'arrow', fileName: 'table.arrow' });
+    gridStore.applyDplyrFilter('  id > 1  ');
+    expect(post).toHaveBeenCalledWith({ type: 'APPLY_DPLYR_FILTER', payload: { expression: 'id > 1' } });
+    expect(gridStore.dplyrFilter).toBe('');
+    expect(gridStore.getCell(0, 0)).toBe(3);
+    gridStore.init({ ...payload(true), fileType: 'arrow', fileName: 'table.arrow', dplyrFilter: 'id > 1', totalRows: 2 });
+    expect(gridStore.dplyrFilter).toBe('id > 1');
+    expect(gridStore.paged).toBe(true);
+    gridStore.applyDplyrFilter('');
+    expect(post).toHaveBeenLastCalledWith({ type: 'APPLY_DPLYR_FILTER', payload: { expression: '' } });
+  });
+
+  it('resets local transforms and the viewport when the backend filter changes', () => {
+    gridStore.init({ ...payload(), fileType: 'arrow', fileName: 'table.arrow' });
+    gridStore.setSort({ colIndex: 0, direction: 'asc' });
+    gridStore.updateViewport(1_000_000, 1_000_050);
+    gridStore.init({ ...payload(true), fileType: 'arrow', fileName: 'table.arrow', dplyrFilter: 'id > 1' });
+    expect(gridStore.sort).toBeNull();
+    expect(gridStore['start']).toBe(0);
+    expect(gridStore['end']).toBe(50);
+  });
+});
+
 describe('paged tables', () => {
   it('deduplicates pages and does not scan/filter the whole table', async () => {
     gridStore.init(payload(true));

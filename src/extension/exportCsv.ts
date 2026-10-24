@@ -11,10 +11,12 @@ const escape = (value: CellValue): string => {
 /** Write beside the destination, then rename. Cancellation never leaves a partial CSV. */
 export async function exportCsv(
   reader: PagedReader, source: string, target: string, signal: AbortSignal,
-  progress: (pct: number) => void, order?: number[],
+  progress: (pct: number) => void, order?: number[], protectedPaths: readonly string[] = [],
 ): Promise<void> {
   const canonical = async (path: string) => (await realpath(path).catch(() => resolve(path)));
-  if (await canonical(source) === await canonical(target)) throw new Error('Export cannot overwrite the source file.');
+  const destination = await canonical(target);
+  const sources = await Promise.all([source, ...protectedPaths].map(canonical));
+  if (sources.includes(destination)) throw new Error('Export cannot overwrite a source file.');
   if (order && (order.length > 100_000 || order.some(row => !Number.isSafeInteger(row) || row < 0 || row >= reader.totalRows))) {
     throw new Error('Invalid export row order');
   }

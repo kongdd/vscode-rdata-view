@@ -6,6 +6,8 @@
   let stats = $state(false);
   let objectsOpen = $state(false);
   let rowNumber = $state<number | undefined>();
+  let expression = $state('');
+  $effect(() => { expression = gridStore.dplyrFilter; });
   const jumpDisabled = $derived(uiStore.loading || gridStore.filteredRows === 0);
   // 有具名对象（rda、qs 多对象、xlsx 工作表）时显示对象名；多个才可点击切换。路径已由面包屑给出。
   const objects = $derived(gridStore.selectedSheet ? gridStore.availableSheets : []);
@@ -33,6 +35,26 @@
   <input class="search-input" type="search" placeholder={gridStore.paged ? 'Search unavailable in on-demand mode' : 'Search…'}
     disabled={gridStore.paged} value={gridStore.globalSearch}
     oninput={(event) => gridStore.setGlobalSearch(event.currentTarget.value)} aria-label="Search table" />
+  {#if gridStore.fileType === 'arrow'}
+    <form class="dplyr-filter" onsubmit={(event) => {
+      event.preventDefault();
+      gridStore.applyDplyrFilter(expression);
+    }}>
+      <input class="search-input" bind:value={expression} aria-label="dplyr filter"
+        placeholder="filter: value > 0, !is.na(site)"
+        title="dplyr::filter() conditions; Enter to apply. Executes local R code in a trusted workspace."
+        disabled={uiStore.loading} />
+      <button type="submit" disabled={uiStore.loading}>Apply</button>
+      {#if expression || gridStore.dplyrFilter}
+        <button type="button" onclick={() => {
+          expression = ''; gridStore.applyDplyrFilter('');
+        }}>Clear</button>
+      {/if}
+      <small title={gridStore.dplyrFilter ? 'R / dplyr backend; filters the whole file' : 'TypeScript Arrow backend'}>
+        {gridStore.dplyrFilter ? 'R / dplyr' : 'TS'}
+      </small>
+    </form>
+  {/if}
   <form class="row-jump" onsubmit={(event) => {
     event.preventDefault();
     if (!jumpDisabled && rowNumber !== undefined) gridStore.goToRow(rowNumber);
@@ -58,7 +80,7 @@
       </div>
     {/if}
   </div>
-  <button disabled={uiStore.loading || uiStore.exportProgress !== null} onclick={() => gridStore.exportCsv()} title="Export table (current filter/sort in small-table mode)">Export CSV</button>
+  <button disabled={uiStore.loading || uiStore.exportProgress !== null} onclick={() => gridStore.exportCsv()} title={gridStore.dplyrFilter ? 'Export all dplyr-filtered rows' : 'Export table (current filter/sort in small-table mode)'}>Export CSV</button>
 </div>
 {#if stats}<DatasetStatsPanel onClose={() => stats = false} />{/if}
 
@@ -70,6 +92,8 @@
   .object-panel button { display: block; width: 100%; text-align: left; border-radius: 0; padding: 6px 10px; font-size: 12px; }
   .object-panel button.active { background: var(--gm-hover); font-weight: 600; }
   .search-input { flex: 1; min-width: 80px; max-width: 500px; margin: 0 auto; padding: 5px 8px; background: var(--gm-input-bg); color: var(--gm-fg); border: 1px solid var(--gm-border); border-radius: 4px; }
+  .dplyr-filter { display: flex; align-items: center; gap: 2px; flex: 1; min-width: 180px; }
+  .dplyr-filter .search-input { width: 100%; margin: 0; }
   .row-jump { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
   .row-input { width: 90px; padding: 5px 8px; background: var(--gm-input-bg); color: var(--gm-fg); border: 1px solid var(--gm-border); border-radius: 4px; font: inherit; font-size: 12px; }
   button { padding: 4px 8px; background: transparent; border: 1px solid transparent; border-radius: 4px; color: var(--gm-fg); cursor: pointer; font: inherit; font-size: 11px; white-space: nowrap; }

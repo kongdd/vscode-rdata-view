@@ -4,7 +4,8 @@ import { basename, extname, join } from 'node:path';
 import { homedir } from 'node:os';
 import { randomBytes } from 'node:crypto';
 import { ArrowFileReader, ArrowStreamError } from './reader/Arrow.js';
-import { RReader } from './reader/R.js';
+import { RReader, runRQuery, type RQueryResult } from './reader/R.js';
+import { warmR } from './reader/RWorker.js';
 import { exportCsv } from './exportCsv.js';
 import type { PagedReader } from './reader/Paged.js';
 import type { HostMessage, WebviewMessage } from '../shared/messages.js';
@@ -34,18 +35,29 @@ function rExecutable(uri: vscode.Uri): string {
     .replace(/\$\{workspaceFolder\}/g, vscode.workspace.getWorkspaceFolder(uri)?.uri.fsPath ?? '');
 }
 
+interface ViewOptions {
+  title?: string;
+  cleanup?: () => Promise<void>;
+  protectedPaths?: string[];
+  openQuery?: (result: RQueryResult, title: string, sources: string[]) => void;
+}
+
 /** One panel owns one reader and one cancellable load; no document patch/save machinery. */
 export class TableView implements vscode.Disposable {
   private reader?: PagedReader;
   private loading?: AbortController;
   private exporting?: AbortController;
+  private querying?: AbortController;
   private selected = '';
+  private filter = '';
   private ready = false;
   private disposed = false;
   private paged = true;
   private loadQueue: Promise<void> = Promise.resolve();
 
-  constructor(private uri: vscode.Uri, private panel: vscode.WebviewPanel, private root: vscode.Uri) {
+  constructor(private uri: vscode.Uri, private panel: vscode.WebviewPanel, private root: vscode.Uri,
+    private options: ViewOptions = {}) {
+    if (fileType(uri.fsPath) !== 'arrow') this.prewarmR();
     const webRoot = vscode.Uri.joinPath(root, 'webview-ui', 'dist');
     panel.webview.options = { enableScripts: true, localResourceRoots: [webRoot] };
     const nonce = randomBytes(16).toString('hex');
@@ -63,6 +75,7 @@ export class TableView implements vscode.Disposable {
       if (!panel.visible) {
         this.loading?.abort();
         this.exporting?.abort();
+        this.querying?.abort();
         this.send({ type: 'DATA_VISIBILITY', payload: { visible: false } });
         void this.reader?.suspend().catch(error => this.fail(error));
       } else {
@@ -77,8 +90,13 @@ export class TableView implements vscode.Disposable {
     this.disposed = true;
     this.loading?.abort();
     this.exporting?.abort();
-    void this.reader?.dispose().catch(() => undefined);
+    this.querying?.abort();
+    const closing = this.reader?.dispose();
+    void closing?.catch(() => undefined);
     this.reader = undefined;
+    if (this.options.cleanup) {
+      void Promise.allSettled([this.loadQueue, closing]).then(() => this.options.cleanup!()).catch(() => undefined);
+    }
   }
 
   private send(message: HostMessage): void { if (!this.disposed) void this.panel.webview.postMessage(message); }
@@ -86,15 +104,32 @@ export class TableView implements vscode.Disposable {
     this.send({ type: 'ERROR', payload: { message: error instanceof Error ? error.message : String(error), requestId } });
   }
 
-  private load(selected?: string): Promise<void> {
+  private rOptions(signal?: AbortSignal) {
+    const config = vscode.workspace.getConfiguration('rdataView');
+    return {
+      executable: rExecutable(this.uri), script: join(this.root.fsPath, 'dist', 'read-table.R'),
+      server: join(this.root.fsPath, 'dist', 'read-table-server.R'),
+      timeout: config.get<number>('r.timeoutSeconds', 120) * 1000,
+      idleTimeoutSeconds: config.get<number>('r.idleTimeoutSeconds', 300), signal,
+    };
+  }
+
+  private prewarmR(dplyr = false): void {
+    const options = this.rOptions();
+    void warmR(options.executable, options.server, options.timeout, options.idleTimeoutSeconds, dplyr)
+      .catch(() => undefined); // 真正读取时报告错误，预热不阻塞文件打开。
+  }
+
+  private load(selected?: string, filter = this.filter): Promise<void> {
     this.loading?.abort();
+    this.querying?.abort();
     const controller = this.loading = new AbortController();
-    const task = this.loadQueue.then(() => this.loadTable(controller, selected));
+    const task = this.loadQueue.then(() => this.loadTable(controller, selected, filter));
     this.loadQueue = task.catch(() => undefined);
     return task;
   }
 
-  private async loadTable(controller: AbortController, selected?: string): Promise<void> {
+  private async loadTable(controller: AbortController, selected: string | undefined, filter: string): Promise<void> {
     let opened: PagedReader | undefined;
     try {
       controller.signal.throwIfAborted();
@@ -106,22 +141,19 @@ export class TableView implements vscode.Disposable {
         await previous?.dispose();
         this.selected = selected;
       }
+      const switching = filter !== this.filter;
+      if (switching) await this.reader?.suspend();
       this.reader?.resume();
       const type = fileType(this.uri.fsPath);
       const totalBytes = (await stat(this.uri.fsPath)).size;
       const budget = vscode.workspace.getConfiguration('rdataView').get<number>('pagingThresholdMB', 64) * 1024 * 1024;
-      if (!this.reader) {
-        const config = vscode.workspace.getConfiguration('rdataView');
+      if (!this.reader || switching) {
         const rOptions = {
-          executable: rExecutable(this.uri), script: join(this.root.fsPath, 'dist', 'read-table.R'),
-          server: join(this.root.fsPath, 'dist', 'read-table-server.R'),
-          timeout: config.get<number>('r.timeoutSeconds', 120) * 1000,
-          idleTimeoutSeconds: config.get<number>('r.idleTimeoutSeconds', 300),
-          signal: controller.signal, selected: this.selected,
+          ...this.rOptions(controller.signal), selected: this.selected, filter,
           // 超大 CSV 不整体转换，改为按行 fread（阈值兼顾转换耗时与内存）。
           paged: type === 'csv' && (budget === 0 || totalBytes > Math.max(budget, PAGED_CSV_BYTES)),
         };
-        if (type === 'arrow') {
+        if (type === 'arrow' && !filter) {
           try { opened = await ArrowFileReader.open(this.uri.fsPath); }
           catch (error) {
             if (!(error instanceof ArrowStreamError)) throw error;
@@ -131,10 +163,9 @@ export class TableView implements vscode.Disposable {
           opened = await RReader.open(this.uri.fsPath, rOptions);
         }
         controller.signal.throwIfAborted();
-        this.reader = opened;
       }
-      const reader = this.reader;
-      this.paged = budget === 0 || Math.max(totalBytes, reader instanceof RReader ? reader.bytes : 0,
+      const reader = opened ?? this.reader!;
+      this.paged = !!filter || budget === 0 || Math.max(totalBytes, reader instanceof RReader ? reader.bytes : 0,
         reader.totalRows * Math.max(reader.schema.length, 1) * 32) > budget || reader.totalRows > 100_000;
       let rows: CellValue[][] = [];
       let bytes = 0;
@@ -146,13 +177,18 @@ export class TableView implements vscode.Disposable {
         rows.push(...page);
       }
       controller.signal.throwIfAborted();
+      const previous = this.reader;
+      this.reader = reader;
+      this.filter = filter;
+      if (previous && previous !== reader) await previous.dispose();
+      controller.signal.throwIfAborted();
       const choices = reader instanceof RReader ? reader.choices : [];
       this.selected = reader instanceof RReader ? reader.selected : '';
       // 对象名在表格左上角显示并可切换，标签页标题只留文件名，路径由面包屑给出。
-      this.panel.title = basename(this.uri.fsPath);
+      this.panel.title = this.options.title ?? basename(this.uri.fsPath);
       this.send({ type: 'INIT', payload: {
         fileType: type, fileName: basename(this.uri.fsPath), totalRows: reader.totalRows, totalBytes,
-        schema: reader.schema, rows, paged: this.paged, choices, selected: this.selected,
+        schema: reader.schema, rows, paged: this.paged, choices, selected: this.selected, dplyrFilter: this.filter,
       } });
     } catch (error) {
       if (opened) {
@@ -165,6 +201,34 @@ export class TableView implements vscode.Disposable {
     }
   }
 
+  private async executeQuery(code: string): Promise<void> {
+    if (this.querying) return;
+    const controller = this.querying = new AbortController();
+    let result: RQueryResult | undefined;
+    try {
+      if (!vscode.workspace.isTrusted) throw new Error('R commands require a trusted workspace');
+      if (!this.reader || !this.panel.visible || this.loading) throw new Error('Wait for the table to load');
+      if (typeof code !== 'string' || !code.trim() || code.length > 1_000_000) throw new Error('Enter R code (maximum 1 MB)');
+      if (!this.options.openQuery) throw new Error('Query tabs are unavailable');
+      this.prewarmR(true);
+      await this.reader.readRows(0, 0);
+      controller.signal.throwIfAborted();
+      result = this.reader instanceof RReader
+        ? await this.reader.query(code, controller.signal)
+        : await runRQuery(this.uri.fsPath, { ...this.rOptions(controller.signal), selected: this.selected }, code);
+      controller.signal.throwIfAborted();
+      this.options.openQuery(result, `Query — ${basename(this.uri.fsPath)}`,
+        [this.uri.fsPath, ...(this.options.protectedPaths ?? [])]);
+      result = undefined; // 新标签页拥有临时文件，关闭后清理。
+      this.send({ type: 'QUERY_DONE', payload: {} });
+    } catch (error) {
+      await result?.dispose();
+      this.send({ type: 'QUERY_DONE', payload: {
+        error: controller.signal.aborted ? 'R query cancelled' : error instanceof Error ? error.message : String(error),
+      } });
+    } finally { if (this.querying === controller) this.querying = undefined; }
+  }
+
   private async receive(message: WebviewMessage): Promise<void> {
     if (!message || this.disposed) return;
     if (message.type === 'READY') {
@@ -174,6 +238,22 @@ export class TableView implements vscode.Disposable {
       if (!(this.reader instanceof RReader) || !this.reader.choices.includes(message.payload.name)) throw new Error('Unknown table');
       this.exporting?.abort();
       await this.load(message.payload.name);
+    } else if (message.type === 'PREPARE_R') {
+      if (vscode.workspace.isTrusted) this.prewarmR(true);
+    } else if (message.type === 'QUERY_CANCEL') {
+      this.querying?.abort();
+    } else if (message.type === 'EXECUTE_R_QUERY') {
+      await this.executeQuery(message.payload.code);
+    } else if (message.type === 'APPLY_DPLYR_FILTER') {
+      if (fileType(this.uri.fsPath) !== 'arrow' || typeof message.payload.expression !== 'string') {
+        throw new Error('dplyr filters are available only for Arrow / Feather files');
+      }
+      const expression = message.payload.expression.trim();
+      if (expression && !vscode.workspace.isTrusted) throw new Error('dplyr filters require a trusted workspace');
+      if (expression.length > 100_000) throw new Error('Filter expression is too long');
+      this.exporting?.abort();
+      if (expression) this.prewarmR(true);
+      await this.load(undefined, expression);
     } else if (message.type === 'REQUEST_CHUNK') {
       const { requestId, startRow, endRow } = message.payload;
       // 切换对象、隐藏或加载中的请求一律丢弃：过渡期读到的是上一张表的行号，报错只会打扰用户。
@@ -181,7 +261,9 @@ export class TableView implements vscode.Disposable {
       if (!Number.isSafeInteger(startRow) || !Number.isSafeInteger(endRow) || startRow < 0 || endRow < startRow || endRow - startRow > 100_000) {
         throw new Error('Invalid page range');
       }
-      const rows = await this.reader.readRows(startRow, endRow);
+      const reader = this.reader;
+      const rows = await reader.readRows(startRow, endRow);
+      if (this.reader !== reader || this.loading || !this.panel.visible) return;
       this.send({ type: 'CHUNK', payload: { requestId, rows } });
     } else if (message.type === 'EXPORT') {
       if (this.exporting || !this.reader || !this.panel.visible) return;
@@ -194,7 +276,7 @@ export class TableView implements vscode.Disposable {
         controller.signal.throwIfAborted();
         await exportCsv(reader, this.uri.fsPath, target.fsPath, controller.signal,
           pct => this.send({ type: 'EXPORT_PROGRESS', payload: { pct } }),
-          this.paged ? undefined : message.payload.order);
+          this.paged ? undefined : message.payload.order, this.options.protectedPaths);
         this.send({ type: 'EXPORT_DONE', payload: { path: target.fsPath } });
       } catch (error) {
         this.send({ type: 'EXPORT_DONE', payload: { error: controller.signal.aborted ? 'Export cancelled' : String(error) } });

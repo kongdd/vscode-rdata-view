@@ -1,5 +1,6 @@
 class UiStore {
   loading = $state(true);
+  queryRunning = $state(false);
   loadingMessage = $state('Opening table…');
   error = $state<string | null>(null);
   exportProgress = $state<number | null>(null);

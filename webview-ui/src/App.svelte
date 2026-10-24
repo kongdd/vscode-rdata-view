@@ -6,6 +6,7 @@
   import { uiStore } from './stores/ui.svelte.js';
   import Toolbar from './components/Toolbar.svelte';
   import FilterBar from './components/FilterBar.svelte';
+  import RCommand from './components/RCommand.svelte';
   import DataGrid from './components/DataGrid.svelte';
   import StatusBar from './components/StatusBar.svelte';
   import LoadingOverlay from './components/LoadingOverlay.svelte';
@@ -21,10 +22,11 @@
 <div class="app-shell">
   {#if uiStore.error}<ErrorBanner message={uiStore.error} />{/if}
   <Toolbar />
+  <RCommand />
   {#if gridStore.filters.length}<FilterBar />{/if}
   <div class="grid-area">
     {#if gridStore.schema.length}
-      {#key gridStore.selectedSheet}<DataGrid />{/key}
+      {#key `${gridStore.selectedSheet}\0${gridStore.dplyrFilter}`}<DataGrid />{/key}
     {:else if !uiStore.loading}
       <div class="empty-state">Open an R, CSV, Excel or Arrow table.</div>
     {/if}

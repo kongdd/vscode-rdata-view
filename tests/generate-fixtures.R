@@ -14,6 +14,12 @@ semantics <- data.frame(
 )
 saveRDS(semantics, file.path(dir, "semantics.rds"))
 data.table::fwrite(table, file.path(dir, "table.csv"))
+for (compression in c("lz4", "zstd")) {
+  arrow::write_feather(table, file.path(dir, paste0(compression, ".feather")),
+                       compression = compression, chunk_size = 128L)
+}
+arrow::write_feather(table[0, ], file.path(dir, "empty.feather"))
+arrow::write_feather(semantics, file.path(dir, "semantics.feather"))
 qs2::qs_save(table, file.path(dir, "table.qs2"))
 qs2::qd_save(table, file.path(dir, "table.qdata"))
 fst::write_fst(table, file.path(dir, "table.fst"))

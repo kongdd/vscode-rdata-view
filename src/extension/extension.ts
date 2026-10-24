@@ -10,15 +10,28 @@ export function deactivate(): void {
 
 export function activate(context: vscode.ExtensionContext): void {
   const views = new Set<TableView>();
+  let queryNumber = 0;
+  const attach = (uri: vscode.Uri, panel: vscode.WebviewPanel, cleanup?: () => Promise<void>,
+    title?: string, protectedPaths?: string[]) => {
+    const view = new TableView(uri, panel, context.extensionUri, {
+      cleanup, title, protectedPaths,
+      openQuery(result, name, sources) {
+        const title = `${name} (${++queryNumber})`;
+        const resultPanel = vscode.window.createWebviewPanel('rdataView.query', title,
+          panel.viewColumn ?? vscode.ViewColumn.Active, { retainContextWhenHidden: true });
+        attach(vscode.Uri.file(result.path), resultPanel, result.dispose, title, sources);
+      },
+    });
+    views.add(view);
+    panel.onDidDispose(() => { view.dispose(); views.delete(view); });
+  };
   const provider: vscode.CustomReadonlyEditorProvider = {
     openCustomDocument(uri) {
       if (uri.scheme !== 'file') throw new Error('R Data View requires a local file');
       return { uri, dispose() {} };
     },
     resolveCustomEditor(document, panel) {
-      const view = new TableView(document.uri, panel, context.extensionUri);
-      views.add(view);
-      panel.onDidDispose(() => { view.dispose(); views.delete(view); });
+      attach(document.uri, panel);
     },
   };
   context.subscriptions.push(
