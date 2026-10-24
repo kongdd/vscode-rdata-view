@@ -12,5 +12,7 @@ images
 *lock*
 
 # 本地生成的大表测试数据
-data/
+data/*
+!data/*.R
+
 *.smb*
