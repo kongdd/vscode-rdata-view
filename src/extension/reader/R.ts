@@ -5,9 +5,9 @@ import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, extname } from 'node:path';
 import { promisify } from 'node:util';
-import { ArrowFileReader } from './ArrowFileReader.js';
+import { ArrowFileReader } from './Arrow.js';
 import { releaseR, runR } from './RWorker.js';
-import { FilePager, fileStamp } from '../paging/PagedReader.js';
+import { FilePager, fileStamp } from './Paged.js';
 import type { CellValue } from '../../shared/schema.js';
 
 const exec = promisify(execFile);

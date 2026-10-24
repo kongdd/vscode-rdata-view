@@ -1,8 +1,8 @@
 import { expect, it } from 'vitest';
 import { readdir, stat, writeFile } from 'node:fs/promises';
 import { extname, resolve } from 'node:path';
-import { ArrowFileReader } from '../src/extension/reader/ArrowFileReader.js';
-import { RReader } from '../src/extension/reader/RReader.js';
+import { ArrowFileReader } from '../src/extension/reader/Arrow.js';
+import { RReader } from '../src/extension/reader/R.js';
 import { disposeRWorker } from '../src/extension/reader/RWorker.js';
 import { CHUNK_SIZE } from '../src/shared/constants.js';
 

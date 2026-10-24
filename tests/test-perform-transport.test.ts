@@ -3,7 +3,7 @@ import { spawn } from 'node:child_process';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { ArrowFileReader } from '../src/extension/reader/ArrowFileReader.js';
+import { ArrowFileReader } from '../src/extension/reader/Arrow.js';
 import { arrowTypeToInferred, coerceArrowValue, readArrowIPC } from '../src/shared/arrowReader.js';
 import type { CellValue } from '../src/shared/schema.js';
 import { createFrameReader } from './frameReader.js';

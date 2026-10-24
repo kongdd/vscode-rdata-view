@@ -4,7 +4,7 @@ import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { promisify } from 'node:util';
 import { tmpdir } from 'node:os';
 import { join, resolve, dirname } from 'node:path';
-import { RReader } from '../src/extension/reader/RReader.js';
+import { RReader } from '../src/extension/reader/R.js';
 import { disposeRWorker, runR } from '../src/extension/reader/RWorker.js';
 
 const executable = process.env.RDATA_TEST_R;

@@ -2,7 +2,7 @@ import { open, type FileHandle } from 'node:fs/promises';
 import { MessageReader, RecordBatchReader, type AsyncRecordBatchFileReader, type RecordBatch } from 'apache-arrow';
 import { arrowTypeToInferred, coerceArrowValue } from '../../shared/arrowReader.js';
 import type { CellValue } from '../../shared/schema.js';
-import { FilePager } from '../paging/PagedReader.js';
+import { FilePager } from './Paged.js';
 
 const CACHE_BYTES = 32 * 1024 * 1024;
 

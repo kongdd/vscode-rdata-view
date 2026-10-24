@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import type * as vscode from 'vscode';
 import type { HostMessage, WebviewMessage } from '../src/shared/messages.js';
-import type { PagedReader } from '../src/extension/paging/PagedReader.js';
+import type { PagedReader } from '../src/extension/reader/Paged.js';
 
 const { settings } = vi.hoisted(() => ({ settings: { threshold: 64, idleTimeoutSeconds: 60 } }));
 vi.mock('vscode', async () => {
@@ -24,8 +24,8 @@ vi.mock('vscode', async () => {
   };
 });
 import { TableView } from '../src/extension/TableView.js';
-import { ArrowFileReader } from '../src/extension/reader/ArrowFileReader.js';
-import { RReader } from '../src/extension/reader/RReader.js';
+import { ArrowFileReader } from '../src/extension/reader/Arrow.js';
+import { RReader } from '../src/extension/reader/R.js';
 
 const uri = (fsPath: string) => ({ fsPath, scheme: 'file' }) as vscode.Uri;
 let dir: string;

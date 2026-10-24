@@ -1,6 +1,6 @@
 import { mkdtemp, open, realpath, rename, rm } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
-import type { PagedReader } from './paging/PagedReader.js';
+import type { PagedReader } from './reader/Paged.js';
 import type { CellValue } from '../shared/schema.js';
 
 const escape = (value: CellValue): string => {
