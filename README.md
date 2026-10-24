@@ -111,17 +111,16 @@ arf --vanilla -f scripts/bench-arrow-dplyr.R
 
 ### R 命令与查询结果
 
-在命令框编写 R 代码，点击“执行 R”。`df` 是当前对象或工作表；Arrow 为惰性数据集，并包含已应用的 dplyr 条件，不包含前端的搜索、排序或列筛选。执行时默认加载 `data.table`、`magrittr`、`dplyr`、`lubridate`，可直接使用 `%>%`、`filter()`、`as.data.table()`、`ymd()` 等；其他包请显式加载或使用 `包名::函数`。
+在命令框编写 R 代码，点击“执行 R”或按 `Cmd+Enter` / `Ctrl+Enter`；普通 Enter 换行；`Cmd+Shift+M` 在光标处插入 `%>%` 并附加一个空格，Tab 插入 2 个空格，选中文本会被替换（Shift+Tab 仍切换焦点）。`df` 是当前对象或工作表；Arrow 为惰性数据集，并包含已应用的 dplyr 条件，不包含前端的搜索、排序或列筛选。执行时默认加载 `data.table`、`magrittr`、`dplyr`、`lubridate`，可直接使用 `%>%`、`filter()`、`as.data.table()`、`ymd()` 等；其他包请显式加载或使用 `包名::函数`。
 
 ```r
 df |>
   filter(!is.na(temperature), temperature > 10) |>
   group_by(site) |>
-  summarise(mean_temperature = mean(temperature), .groups = "drop") |>
-  collect()
+  summarise(mean_temperature = mean(temperature), .groups = "drop")
 ```
 
-最后一个表达式可返回 **`data.frame`、`tibble`、`data.table` 或矩阵**；无需强制转换。其他类型会报错。成功后在同一编辑器组新开只读结果标签页，可点击标签切换，不分屏、不替换原表；结果可导出 CSV，但不能覆盖原始输入或上游查询文件；关闭标签页后清理临时文件。`collect()`、排序及任意 R 运算可能整表占用内存，并写出完整的临时 Arrow 文件，不属于有界分页。
+最后一个表达式可返回 **Arrow 查询、Dataset、Table、RecordBatch、`data.frame`、`tibble`、`data.table` 或矩阵**。Arrow 结果由内部自动 `collect()`，例如直接写 `df |> head(10)` 即可；不会预先物化输入整表。其他类型会报错。成功后在同一编辑器组新开只读结果标签页，可点击标签切换，不分屏、不替换原表，编号复用最小空闲值（关闭后释放，存续标签编号不变）；结果可导出 CSV，但不能覆盖原始输入或上游查询文件；关闭标签页后清理临时文件。最终结果会完整物化并写入临时 Arrow 文件；返回整个 `df`、排序或其他 R 运算可能整表占用内存，不属于有界分页。
 
 R 文件在打开面板时即预热 R，与界面资源传输重叠；Arrow 在应用筛选或聚焦命令框时才预热，默认预览不依赖 R。隐藏、关闭、切换数据或点击“取消”会取消当前命令。工作进程会复用，空闲后按设置退出。
 

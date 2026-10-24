@@ -1,8 +1,28 @@
+<script module lang="ts">
+  export function handleCommandKey(event: KeyboardEvent & { currentTarget: HTMLTextAreaElement }): void {
+    if (event.isComposing) return;
+    const execute = event.key === 'Enter' && (event.metaKey || event.ctrlKey);
+    let text = '';
+    if (event.key === 'Tab' && !(event.shiftKey || event.metaKey || event.ctrlKey || event.altKey)) text = '  ';
+    else if (event.key.toLowerCase() === 'm' && event.metaKey && event.shiftKey) text = '%>% ';
+    if (!execute && !text) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (execute) {
+      event.currentTarget.form?.requestSubmit();
+      return;
+    }
+    const input = event.currentTarget;
+    input.setRangeText(text, input.selectionStart, input.selectionEnd, 'end');
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+</script>
+
 <script lang="ts">
   import { postMessage } from '../bridge/vscode.js';
   import { uiStore } from '../stores/ui.svelte.js';
 
-  let code = $state('df |>\n  collect()');
+  let code = $state('df %>% head(10)');
 </script>
 
 <form class="r-command" onsubmit={(event) => {
@@ -13,11 +33,13 @@
   postMessage({ type: 'EXECUTE_R_QUERY', payload: { code } });
 }}>
   <textarea bind:value={code} rows="3" aria-label="R command"
+    aria-keyshortcuts="Meta+Enter Control+Enter Meta+Shift+M Tab" onkeydown={handleCommandKey}
     onfocus={() => postMessage({ type: 'PREPARE_R' })} spellcheck="false"
     title="df is the current table (lazy for Arrow). data.table, magrittr, dplyr and lubridate are loaded before execution."
     disabled={uiStore.queryRunning}></textarea>
   <div class="command-actions">
-    <button type="submit" disabled={uiStore.loading || uiStore.queryRunning || !code.trim()}>执行 R</button>
+    <button type="submit" title="执行（Cmd+Enter / Ctrl+Enter）"
+      disabled={uiStore.loading || uiStore.queryRunning || !code.trim()}>执行 R</button>
     {#if uiStore.queryRunning}
       <button type="button" onclick={() => postMessage({ type: 'QUERY_CANCEL' })}>取消</button>
     {/if}

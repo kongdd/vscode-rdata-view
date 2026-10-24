@@ -253,9 +253,24 @@ describe.skipIf(!executable)('R formats (set RDATA_TEST_R to run)', () => {
     ['tibble', 'tibble::tibble(id = 1:2, value = 3:4)'],
     ['data.table', 'data.table::data.table(id = 1:2, value = 3:4)'],
     ['matrix', 'matrix(1:4, nrow = 2)'],
+    ['Arrow Table', 'arrow::Table$create(id = 1:2, value = 3:4)'],
+    ['Arrow RecordBatch', 'arrow::RecordBatch$create(id = 1:2, value = 3:4)'],
   ])('accepts %s command results without forcing data.table conversion', async (_, code) => {
     expect(await queryRows(await runRQuery(join(dir, 'lz4.feather'), served, code)))
       .toEqual([[1, 3], [2, 4]]);
+  });
+
+  it.each([options, served])('automatically collects only the final Arrow command result (%j)', async settings => {
+    for (const [code, expected] of [
+      ['df |> head(10)', Array.from({ length: 10 }, (_, i) => i + 1)],
+      ['df |> filter(id > 1097) |> select(id)', [1098, 1099, 1100]],
+      ['df |> filter(id < 0)', []],
+      ['df |> summarise(n = n())', [1100]],
+      ['df', Array.from({ length: 1100 }, (_, i) => i + 1)],
+    ] as const) {
+      const result = await runRQuery(join(dir, 'zstd.feather'), settings, code);
+      expect((await queryRows(result)).map(row => row[0])).toEqual(expected);
+    }
   });
 
   it.each([options, served])('loads data.table, magrittr, dplyr and lubridate before commands (%j)', async settings => {

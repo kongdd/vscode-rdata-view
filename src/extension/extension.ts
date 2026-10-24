@@ -10,15 +10,19 @@ export function deactivate(): void {
 
 export function activate(context: vscode.ExtensionContext): void {
   const views = new Set<TableView>();
-  let queryNumber = 0;
+  const queryNumbers = new Set<number>();
   const attach = (uri: vscode.Uri, panel: vscode.WebviewPanel, cleanup?: () => Promise<void>,
     title?: string, protectedPaths?: string[]) => {
     const view = new TableView(uri, panel, context.extensionUri, {
       cleanup, title, protectedPaths,
       openQuery(result, name, sources) {
-        const title = `${name} (${++queryNumber})`;
+        let number = 1;
+        while (queryNumbers.has(number)) number++;
+        const title = `${name} (${number})`;
         const resultPanel = vscode.window.createWebviewPanel('rdataView.query', title,
           panel.viewColumn ?? vscode.ViewColumn.Active, { retainContextWhenHidden: true });
+        queryNumbers.add(number);
+        resultPanel.onDidDispose(() => queryNumbers.delete(number));
         attach(vscode.Uri.file(result.path), resultPanel, result.dispose, title, sources);
       },
     });

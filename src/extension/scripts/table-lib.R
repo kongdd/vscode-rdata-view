@@ -197,7 +197,7 @@ write_arrow_filter <- function(state, output, start, end) {
 }
 
 # 显式执行用户 R 代码：df 是当前表，Arrow 保持惰性，结果须为可查看的表或矩阵。
-# 与只读分页不同，用户 collect()/排序/聚合可能物化整表并产生完整临时文件。
+# 与只读分页不同，最终 Arrow 结果自动物化；排序/聚合可能处理整表并产生完整临时文件。
 execute_query <- function(input, output, selected, encoded, filter = "", cached = NULL) {
   for (pkg in c("data.table", "magrittr", "dplyr", "lubridate")) {
     need(pkg)
@@ -217,5 +217,8 @@ execute_query <- function(input, output, selected, encoded, filter = "", cached 
   sink(con)
   on.exit({ sink(); close(con) }, add = TRUE)
   value <- eval(parse(text = decode_text(encoded), keep.source = FALSE), envir = env)
+  if (inherits(value, c("arrow_dplyr_query", "Dataset", "Table", "RecordBatch"))) {
+    value <- dplyr::collect(value)
+  }
   write_table(result(normalize(value)), output)
 }
