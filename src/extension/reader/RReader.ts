@@ -13,7 +13,7 @@ import type { CellValue } from '../../shared/schema.js';
 const exec = promisify(execFile);
 export interface ROptions {
   executable: string; script: string; timeout: number; server?: string;
-  signal?: AbortSignal; selected?: string; paged?: boolean;
+  signal?: AbortSignal; selected?: string; paged?: boolean; idleTimeoutSeconds?: number;
 }
 
 /** 一次扫描得到换行数与是否含引号（约 4GB/s）。带引号时行号与记录号不一致，需整体转换。 */
@@ -37,7 +37,7 @@ async function prepare(path: string, options: ROptions, start = 0, end = 1, extr
       const request = [path, output, options.selected ?? '', start, end,
         extra.RDATA_PAGED === '1' ? '1' : '0', extra.RDATA_SAMPLE === '1' ? '1' : '0',
         extra.RDATA_CLASSES ?? '', extra.RDATA_CACHE ?? ''].join('\t');
-      const reply = await runR(options.executable, options.server, request, options.signal, options.timeout);
+      const reply = await runR(options.executable, options.server, request, options.signal, options.timeout, options.idleTimeoutSeconds);
       if (reply !== 'ok') throw new Error(reply.replace(/^error\t/, ''));
     } else {
       const result = await exec(options.executable, ['--vanilla', '--slave', '-f', options.script], {
@@ -82,8 +82,6 @@ export class RReader extends FilePager {
     this.ranged = !this.fst && options.paged === true;
     // CSV 仍走原有磁盘转换/行区间路径，不把大文本整表常驻冒充分页。
     this.cacheKey = options.server && /\.(rds|rda|rdata|qs2|qdata|xlsx)$/i.test(path) ? randomUUID() : '';
-    if (this.cacheKey) this.notice = 'This format is fully decoded in R memory; only requested pages are converted to Arrow. Hidden tables are released and reloaded on demand.';
-    else if (!this.fst && !this.ranged) this.notice = 'This format is decoded once in R to a temporary Arrow file, then read by page.';
   }
 
   static async open(path: string, options: ROptions): Promise<RReader> {
@@ -123,7 +121,6 @@ export class RReader extends FilePager {
     if (quoted) {
       // 引号内换行会让行号与记录号错位，退回整体转换。
       this.ranged = false;
-      this.notice = 'Quoted multi-line fields need a one-off conversion; rows are then read by page.';
       return false;
     }
     this.dir = await mkdtemp(join(tmpdir(), 'rdata-csv-'));
@@ -138,7 +135,6 @@ export class RReader extends FilePager {
       await file.dispose();
     }
     this.totalRows = Math.max(0, lines - 1);
-    this.notice = 'Rows are read on demand with data.table::fread() to keep memory flat.';
     if (await fileStamp(this.path) !== before) throw new Error('File changed while indexing. Reopen the editor.');
     return true;
   }

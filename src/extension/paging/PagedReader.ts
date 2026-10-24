@@ -4,7 +4,6 @@ import type { CellValue, ColumnSchema } from '../../shared/schema.js';
 export interface PagedReader {
   schema: ColumnSchema[];
   totalRows: number;
-  notice?: string;
   readRows(start: number, end: number): Promise<CellValue[][]>;
   suspend(): Promise<void>;
   resume(): void;
@@ -20,7 +19,6 @@ export async function fileStamp(path: string): Promise<string> {
 export abstract class FilePager implements PagedReader {
   schema: ColumnSchema[] = [];
   totalRows = 0;
-  notice?: string;
   protected active = true;
   private queue: Promise<void> = Promise.resolve();
   private disposal?: Promise<void>;

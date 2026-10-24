@@ -115,6 +115,13 @@
           "minimum": 1,
           "description": "R conversion/page timeout in seconds."
         },
+        "rdataView.r.idleTimeoutSeconds": {
+          "type": "integer",
+          "default": 300,
+          "minimum": 1,
+          "maximum": 2147483,
+          "description": "Seconds before an idle R worker exits. Reopen the table after changing this setting."
+        },
         "rdataView.pagingThresholdMB": {
           "type": "number",
           "default": 64,

@@ -55,6 +55,49 @@ describe('small tables share one data path', () => {
   });
 });
 
+describe('column menu operations', () => {
+  it('clears sorting and applies the column filter', () => {
+    gridStore.init({ ...payload(), rows: [[3], [null], [1]] });
+    gridStore.setSort({ colIndex: 0, direction: 'desc' });
+    expect(gridStore.getCell(1, 0)).toBe(1);
+    gridStore.setSort(null);
+    expect(gridStore.getCell(1, 0)).toBeNull();
+    gridStore.setFilter({ colIndex: 0, op: 'is_not_null', value: '' });
+    expect(gridStore.filteredRows).toBe(2);
+    expect(gridStore.getCell(1, 0)).toBe(1);
+    gridStore.removeFilter(0);
+    expect(gridStore.filteredRows).toBe(3);
+  });
+
+  it('freezes, unfreezes, hides and restores columns without changing data', () => {
+    gridStore.toggleFreezeCol(0);
+    expect(gridStore.frozenCols.has(0)).toBe(true);
+    gridStore.toggleFreezeCol(0);
+    expect(gridStore.frozenCols.size).toBe(0);
+    gridStore.toggleFreezeCol(0);
+    gridStore.unfreezeAllCols();
+    expect(gridStore.frozenCols.size).toBe(0);
+    gridStore.toggleColumnVisibility(0);
+    expect(gridStore.visibleSchema).toEqual([]);
+    gridStore.toggleColumnVisibility(0);
+    expect(gridStore.visibleSchema).toEqual(gridStore.schema);
+    expect(gridStore.getCell(0, 0)).toBe(3);
+  });
+
+  it('copies a column in current filter/sort order', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal('navigator', { clipboard: { writeText } });
+    try {
+      gridStore.setSort({ colIndex: 0, direction: 'asc' });
+      gridStore.setFilter({ colIndex: 0, op: 'gt', value: 1 });
+      await gridStore.copyColumnToClipboard(0);
+      expect(writeText).toHaveBeenCalledWith('2\n3');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});
+
 describe('row navigation', () => {
   it('uses 1-based row numbers and replaces the previous selection', () => {
     gridStore.selectCell(0, 0);
@@ -102,8 +145,11 @@ describe('paged tables', () => {
     expect(read).toHaveBeenCalledTimes(1);
     gridStore.setGlobalSearch('1');
     gridStore.setSort({ colIndex: 0, direction: 'asc' });
+    gridStore.setFilter({ colIndex: 0, op: 'is_not_null', value: '' });
     expect(gridStore.globalSearch).toBe('');
     expect(gridStore.sort).toBeNull();
+    expect(gridStore.filters).toEqual([]);
+    expect(gridStore.computeColumnStats(0)).toBeNull();
     expect(gridStore.computeDatasetStats()).toBeNull();
     gridStore.setDataVisible(false);
     expect(gridStore['cache'].size).toBe(0);

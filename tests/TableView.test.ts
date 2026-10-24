@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { execFileSync } from 'node:child_process';
 import { mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -6,13 +7,17 @@ import type * as vscode from 'vscode';
 import type { HostMessage, WebviewMessage } from '../src/shared/messages.js';
 import type { PagedReader } from '../src/extension/paging/PagedReader.js';
 
-const { settings } = vi.hoisted(() => ({ settings: { threshold: 64 } }));
+const { settings } = vi.hoisted(() => ({ settings: { threshold: 64, idleTimeoutSeconds: 60 } }));
 vi.mock('vscode', async () => {
   const { join } = await import('node:path');
   return {
     Uri: { joinPath: (root: { fsPath: string }, ...parts: string[]) => ({ fsPath: join(root.fsPath, ...parts), toString() { return this.fsPath; } }) },
     workspace: {
-      getConfiguration: () => ({ get: (name: string, fallback: unknown) => name === 'pagingThresholdMB' ? settings.threshold : fallback }),
+      getConfiguration: () => ({ get: (name: string, fallback: unknown) => {
+        if (name === 'pagingThresholdMB') return settings.threshold;
+        if (name === 'r.idleTimeoutSeconds') return settings.idleTimeoutSeconds;
+        return fallback;
+      } }),
       getWorkspaceFolder: () => undefined,
     },
     window: { showSaveDialog: vi.fn().mockResolvedValue(undefined) },
@@ -20,6 +25,7 @@ vi.mock('vscode', async () => {
 });
 import { TableView } from '../src/extension/TableView.js';
 import { ArrowFileReader } from '../src/extension/reader/ArrowFileReader.js';
+import { RReader } from '../src/extension/reader/RReader.js';
 
 const uri = (fsPath: string) => ({ fsPath, scheme: 'file' }) as vscode.Uri;
 let dir: string;
@@ -45,7 +51,12 @@ function open(path: string): TableView {
 }
 const init = () => messages.filter(message => message.type === 'INIT').at(-1)!;
 
-beforeEach(async () => { dir = await mkdtemp(join(tmpdir(), 'rdata-view-test-')); messages = []; settings.threshold = 64; });
+beforeEach(async () => {
+  dir = await mkdtemp(join(tmpdir(), 'rdata-view-test-'));
+  messages = [];
+  settings.threshold = 64;
+  settings.idleTimeoutSeconds = 60;
+});
 afterEach(async () => {
   const reader = view?.['reader'];
   view?.dispose();
@@ -56,6 +67,20 @@ afterEach(async () => {
 });
 
 describe('single read-only table provider', () => {
+  it('passes the configured R idle timeout in seconds', async () => {
+    settings.idleTimeoutSeconds = 180;
+    const path = join(dir, 'table.rds');
+    await writeFile(path, 'mock');
+    const reader = {
+      totalRows: 0, schema: [], readRows: async () => [],
+      resume() {}, suspend: async () => {}, dispose: async () => {},
+    } satisfies PagedReader;
+    const opening = vi.spyOn(RReader, 'open').mockResolvedValue(reader as unknown as RReader);
+    open(path);
+    await view['receive']({ type: 'READY' });
+    expect(opening).toHaveBeenCalledWith(path, expect.objectContaining({ idleTimeoutSeconds: 180 }));
+  });
+
   it('loads small tables completely and reloads rows after hide/reveal', async () => {
     const path = join(dir, 'table.csv');
     await writeFile(path, 'id,name\n1,a\n2,b\n');
@@ -155,6 +180,33 @@ describe('single read-only table provider', () => {
     await view['loadQueue'];
     expect(await reader.readRows(0, 2)).toEqual(first);
     expect((await stat(path)).mtimeMs).toBe(before.mtimeMs);
+  });
+
+  it('ignores chunk requests that arrive while the panel is hidden', async () => {
+    settings.threshold = 0;
+    open(resolve('tests/fixtures/lz4.feather'));
+    await view['receive']({ type: 'READY' });
+    visible = false;
+    changeVisibility();
+    const before = messages.length;
+    await view['receive']({ type: 'REQUEST_CHUNK', payload: { requestId: 'stale', startRow: 0, endRow: 2 } });
+    expect(messages.slice(before).some(message => message.type === 'CHUNK' || message.type === 'ERROR')).toBe(false);
+  });
+
+  it.skipIf(!process.env.RDATA_TEST_R)('switches between tabular objects saved in one RDA', async () => {
+    const r = process.env.RDATA_TEST_R!;
+    const path = join(dir, 'objects.rda');
+    execFileSync(r, ['--vanilla', '--slave', '-e',
+      `t <- data.frame(id = 1:3, g = c('a','b','c')); m <- matrix(1:6, nrow = 3); save(t, m, file = '${path}')`]);
+    open(path);
+    const inits = () => messages.filter(message => message.type === 'INIT');
+    await view['receive']({ type: 'READY' });
+    await vi.waitFor(() => expect(inits()).toHaveLength(1), { timeout: 60_000 });
+    expect(inits()[0].payload).toMatchObject({ choices: ['t', 'm'], selected: 't' });
+    receive({ type: 'SELECT_TABLE', payload: { name: 'm' } });
+    await vi.waitFor(() => expect(inits()).toHaveLength(2), { timeout: 60_000 });
+    expect(inits()[1].payload).toMatchObject({ selected: 'm', choices: ['t', 'm'] });
+    expect(inits()[1].payload.schema[0].name).toBe('V1');
   });
 
   it('finishes a cancelled export dialog without leaving UI progress active', async () => {

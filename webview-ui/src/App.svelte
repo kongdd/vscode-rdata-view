@@ -10,8 +10,6 @@
   import StatusBar from './components/StatusBar.svelte';
   import LoadingOverlay from './components/LoadingOverlay.svelte';
   import ErrorBanner from './components/ErrorBanner.svelte';
-  import NoticeBanner from './components/NoticeBanner.svelte';
-  import SheetTabs from './components/SheetTabs.svelte';
 
   onMount(() => {
     const cleanup = setupMessageHandler();
@@ -22,10 +20,8 @@
 
 <div class="app-shell">
   {#if uiStore.error}<ErrorBanner message={uiStore.error} />{/if}
-  {#if gridStore.notice}<NoticeBanner message={gridStore.notice} />{/if}
   <Toolbar />
   {#if gridStore.filters.length}<FilterBar />{/if}
-  {#if gridStore.availableSheets.length > 1}<SheetTabs />{/if}
   <div class="grid-area">
     {#if gridStore.schema.length}
       {#key gridStore.selectedSheet}<DataGrid />{/key}

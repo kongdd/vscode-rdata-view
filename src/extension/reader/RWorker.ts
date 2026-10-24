@@ -1,7 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { dirname } from 'node:path';
 
-const IDLE_MS = 60_000;
 const GC_IDLE_MS = 1000;
 
 /** 按需启动、串行复用 R；表由 reader 释放，GC 延后到空闲时运行。 */
@@ -10,6 +9,7 @@ class RWorker {
   private waiter: { resolve: (line: string) => void; reject: (error: Error) => void } | undefined;
   private buffer = '';
   private idle: NodeJS.Timeout | undefined;
+  private idleTimeoutSeconds = 300;
   private gc: NodeJS.Timeout | undefined;
   private needsGC = false;
   private disposed = false;
@@ -17,9 +17,10 @@ class RWorker {
 
   constructor(private readonly executable: string, private readonly script: string) {}
 
-  request(line: string, signal: AbortSignal | undefined, timeout: number, start = true): Promise<string> {
+  request(line: string, signal: AbortSignal | undefined, timeout: number, start = true, idleTimeoutSeconds?: number): Promise<string> {
     const task = this.tail.then(() => {
       if (this.disposed) throw new Error('R worker stopped');
+      if (idleTimeoutSeconds !== undefined) this.idleTimeoutSeconds = idleTimeoutSeconds;
       return !start && !this.proc ? 'ok' : this.send(line, signal, timeout);
     });
     this.tail = task.catch(() => undefined);
@@ -43,7 +44,7 @@ class RWorker {
         clearTimeout(timer);
         signal?.removeEventListener('abort', onAbort);
         if (this.proc !== proc) return;
-        this.idle = setTimeout(() => this.stop(), IDLE_MS).unref();
+        this.idle = setTimeout(() => this.stop(), this.idleTimeoutSeconds * 1000).unref();
         this.scheduleGC(timeout);
       };
       const timer = setTimeout(() => this.stop(new Error('R timed out. Increase rdataView.r.timeoutSeconds.')), timeout);
@@ -119,14 +120,14 @@ let current: { key: string; worker: RWorker } | undefined;
 
 /** 按可执行文件+脚本复用同一个 R 进程。 */
 export function runR(
-  executable: string, script: string, request: string, signal: AbortSignal | undefined, timeout: number,
+  executable: string, script: string, request: string, signal: AbortSignal | undefined, timeout: number, idleTimeoutSeconds = 300,
 ): Promise<string> {
   const key = `${executable}\0${script}`;
   if (current?.key !== key) {
     current?.worker.dispose();
     current = { key, worker: new RWorker(executable, script) };
   }
-  return current.worker.request(request, signal, timeout);
+  return current.worker.request(request, signal, timeout, true, idleTimeoutSeconds);
 }
 
 /** 只释放现有进程中的表；回复后再安排空闲 GC，不阻塞文件切换。 */

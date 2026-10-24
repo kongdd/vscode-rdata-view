@@ -116,6 +116,7 @@ export class TableView implements vscode.Disposable {
           executable: rExecutable(this.uri), script: join(this.root.fsPath, 'dist', 'read-table.R'),
           server: join(this.root.fsPath, 'dist', 'read-table-server.R'),
           timeout: config.get<number>('r.timeoutSeconds', 120) * 1000,
+          idleTimeoutSeconds: config.get<number>('r.idleTimeoutSeconds', 300),
           signal: controller.signal, selected: this.selected,
           // 超大 CSV 不整体转换，改为按行 fread（阈值兼顾转换耗时与内存）。
           paged: type === 'csv' && (budget === 0 || totalBytes > Math.max(budget, PAGED_CSV_BYTES)),
@@ -147,11 +148,11 @@ export class TableView implements vscode.Disposable {
       controller.signal.throwIfAborted();
       const choices = reader instanceof RReader ? reader.choices : [];
       this.selected = reader instanceof RReader ? reader.selected : '';
-      // 标签页标题带上当前变量名，避免多对象文件（rda/qs2 等）看不出载入的是哪一个。
-      this.panel.title = this.selected ? `${basename(this.uri.fsPath)} › ${this.selected}` : basename(this.uri.fsPath);
+      // 对象名在表格左上角显示并可切换，标签页标题只留文件名，路径由面包屑给出。
+      this.panel.title = basename(this.uri.fsPath);
       this.send({ type: 'INIT', payload: {
         fileType: type, fileName: basename(this.uri.fsPath), totalRows: reader.totalRows, totalBytes,
-        schema: reader.schema, rows, paged: this.paged, notice: reader.notice, choices, selected: this.selected,
+        schema: reader.schema, rows, paged: this.paged, choices, selected: this.selected,
       } });
     } catch (error) {
       if (opened) {
@@ -175,7 +176,8 @@ export class TableView implements vscode.Disposable {
       await this.load(message.payload.name);
     } else if (message.type === 'REQUEST_CHUNK') {
       const { requestId, startRow, endRow } = message.payload;
-      if (!this.reader || !this.panel.visible) throw new Error('Table is not visible');
+      // 切换对象、隐藏或加载中的请求一律丢弃：过渡期读到的是上一张表的行号，报错只会打扰用户。
+      if (!this.reader || !this.panel.visible || this.loading) return;
       if (!Number.isSafeInteger(startRow) || !Number.isSafeInteger(endRow) || startRow < 0 || endRow < startRow || endRow - startRow > 100_000) {
         throw new Error('Invalid page range');
       }

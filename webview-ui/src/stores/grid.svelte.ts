@@ -53,7 +53,6 @@ class GridStore {
   filteredRows = $state(0);
   totalBytes = $state(0);
   paged = $state(false);
-  notice = $state('');
   schema = $state<ColumnSchema[]>([]);
   hiddenCols = $state<Set<number>>(new Set());
   colWidths = $state<Map<string, number>>(new Map());
@@ -91,7 +90,7 @@ class GridStore {
     Object.assign(this, {
       fileName: payload.fileName, fileType: payload.fileType, totalRows: payload.totalRows,
       totalBytes: payload.totalBytes, schema: payload.schema, paged: payload.paged,
-      notice: payload.notice ?? '', availableSheets: payload.choices, selectedSheet: payload.selected,
+      availableSheets: payload.choices, selectedSheet: payload.selected,
     });
     if (!sameTable) {
       this.filters = [];
@@ -163,7 +162,8 @@ class GridStore {
   }
 
   private requestPage(start: number): void {
-    if (!this.visible || start >= this.totalRows || this.cache.has(start) || this.pending.has(start) ||
+    // 加载中仍在渲染旧表，此时的行号属于上一张表，不发请求。
+    if (!this.visible || uiStore.loading || start >= this.totalRows || this.cache.has(start) || this.pending.has(start) ||
         this.failed.has(start) || this.pending.size >= 4) return;
     const epoch = this.epoch;
     this.pending.add(start);

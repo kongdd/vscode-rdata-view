@@ -40,15 +40,44 @@ afterEach(() => { disposeRWorker(); vi.useRealTimers(); vi.clearAllMocks(); });
 
 it('resets the idle timeout on every request, including long reads', async () => {
   await read();
-  await vi.advanceTimersByTimeAsync(59_000);
+  await vi.advanceTimersByTimeAsync(299_000);
   const pending = request();
   await Promise.resolve();
   await vi.advanceTimersByTimeAsync(2000);
   expect(processes[0].kill).not.toHaveBeenCalled();
   reply();
   await pending;
-  await vi.advanceTimersByTimeAsync(60_000);
+  await vi.advanceTimersByTimeAsync(300_000);
   expect(processes[0].kill).toHaveBeenCalledOnce();
+});
+
+it('uses the configured idle timeout after release and background GC', async () => {
+  const pending = runR('R', 'server.R', 'read', undefined, 120_000, 5);
+  await Promise.resolve();
+  reply();
+  await pending;
+  await release();
+  await vi.advanceTimersByTimeAsync(1000);
+  reply();
+  await vi.advanceTimersByTimeAsync(4999);
+  expect(processes[0].kill).not.toHaveBeenCalled();
+  await vi.advanceTimersByTimeAsync(1);
+  expect(processes[0].kill).toHaveBeenCalledOnce();
+  await read();
+  expect(spawn).toHaveBeenCalledTimes(2);
+});
+
+it('updates the idle timeout without restarting the worker', async () => {
+  await read();
+  const pending = runR('R', 'server.R', 'read', undefined, 120_000, 120);
+  await Promise.resolve();
+  reply();
+  await pending;
+  await vi.advanceTimersByTimeAsync(119_999);
+  expect(processes[0].kill).not.toHaveBeenCalled();
+  await vi.advanceTimersByTimeAsync(1);
+  expect(processes[0].kill).toHaveBeenCalledOnce();
+  expect(spawn).toHaveBeenCalledOnce();
 });
 
 it('releases before GC and postpones GC until R has been idle for a second', async () => {
@@ -73,7 +102,7 @@ it('releases before GC and postpones GC until R has been idle for a second', asy
 
 it('does not restart an expired R process just to release a table', async () => {
   await read();
-  await vi.advanceTimersByTimeAsync(60_000);
+  await vi.advanceTimersByTimeAsync(300_000);
   await releaseR('R', 'server.R', 'table-key', 120_000);
   await vi.advanceTimersByTimeAsync(1000);
   expect(spawn).toHaveBeenCalledOnce();

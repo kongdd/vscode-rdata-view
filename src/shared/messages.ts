@@ -9,7 +9,6 @@ export interface InitPayload {
   schema: ColumnSchema[];
   rows: CellValue[][];
   paged: boolean;
-  notice?: string;
   choices: string[];
   selected: string;
 }

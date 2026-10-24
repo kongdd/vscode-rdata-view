@@ -4,15 +4,32 @@
   import DatasetStatsPanel from './DatasetStatsPanel.svelte';
   let columns = $state(false);
   let stats = $state(false);
+  let objectsOpen = $state(false);
   let rowNumber = $state<number | undefined>();
   const jumpDisabled = $derived(uiStore.loading || gridStore.filteredRows === 0);
-  // 多对象文件（rda）与多工作表（xlsx）显示当前载入的变量名。
-  const title = $derived(gridStore.selectedSheet ? `${gridStore.fileName} › ${gridStore.selectedSheet}` : gridStore.fileName);
+  // 有具名对象（rda、qs 多对象、xlsx 工作表）时显示对象名；多个才可点击切换。路径已由面包屑给出。
+  const objects = $derived(gridStore.selectedSheet ? gridStore.availableSheets : []);
+  const objectsLabel = $derived(gridStore.fileType === 'excel' ? 'Sheets' : 'Tables');
 </script>
 
-<svelte:window onclick={(event) => { if (!(event.target as Element).closest('.col-panel-wrap')) columns = false; }} />
+<svelte:window onclick={(event) => {
+  if (!(event.target as Element).closest('.col-panel-wrap')) columns = false;
+  if (!(event.target as Element).closest('.objects-wrap')) objectsOpen = false;
+}} />
 <div class="toolbar">
-  <span class="file-name" title={title}>{title}</span>
+  {#if objects.length}
+    <div class="objects-wrap">
+      <button class="object-name" title={`Switch ${objectsLabel.toLowerCase()}`} onclick={() => objectsOpen = !objectsOpen}>{gridStore.selectedSheet}</button>
+      {#if objectsOpen}
+        <div class="object-panel" role="menu" aria-label={objectsLabel}>
+          {#each objects as name (name)}
+            <button role="menuitem" class:active={name === gridStore.selectedSheet}
+              onclick={() => { objectsOpen = false; gridStore.selectSheet(name); }}>{name}</button>
+          {/each}
+        </div>
+      {/if}
+    </div>
+  {/if}
   <input class="search-input" type="search" placeholder={gridStore.paged ? 'Search unavailable in on-demand mode' : 'Search…'}
     disabled={gridStore.paged} value={gridStore.globalSearch}
     oninput={(event) => gridStore.setGlobalSearch(event.currentTarget.value)} aria-label="Search table" />
@@ -47,7 +64,11 @@
 
 <style>
   .toolbar { display: flex; align-items: center; gap: 8px; padding: 6px 12px; background: var(--gm-toolbar-bg); border-bottom: 1px solid var(--gm-border); min-height: 38px; flex-shrink: 0; }
-  .file-name { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--gm-fg-muted); }
+  .objects-wrap { position: relative; flex-shrink: 0; }
+  .object-name { max-width: 200px; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
+  .object-panel { position: absolute; top: 100%; left: 0; z-index: 1000; min-width: 160px; max-height: 360px; overflow: auto; background: var(--gm-menu-bg); border: 1px solid var(--gm-border); border-radius: 5px; box-shadow: 0 4px 16px #0004; }
+  .object-panel button { display: block; width: 100%; text-align: left; border-radius: 0; padding: 6px 10px; font-size: 12px; }
+  .object-panel button.active { background: var(--gm-hover); font-weight: 600; }
   .search-input { flex: 1; min-width: 80px; max-width: 500px; margin: 0 auto; padding: 5px 8px; background: var(--gm-input-bg); color: var(--gm-fg); border: 1px solid var(--gm-border); border-radius: 4px; }
   .row-jump { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
   .row-input { width: 90px; padding: 5px 8px; background: var(--gm-input-bg); color: var(--gm-fg); border: 1px solid var(--gm-border); border-radius: 4px; font: inherit; font-size: 12px; }
