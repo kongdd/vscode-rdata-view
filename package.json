@@ -154,13 +154,13 @@
   },
   "scripts": {
     "vscode:prepublish": "npm run build",
-    "build": "node esbuild.config.mjs && npm run build --workspace webview-ui",
-    "check": "tsc --noEmit && npm run check --workspace webview-ui",
-    "test": "vitest run && npm run test --workspace webview-ui",
+    "build": "node esbuild.config.mjs && npm run build --workspace rdata-view-ui",
+    "check": "tsc --noEmit && npm run check --workspace rdata-view-ui",
+    "test": "vitest run && npm run test --workspace rdata-view-ui",
     "package": "vsce package --out release/"
   },
   "workspaces": [
-    "webview-ui"
+    "src/webview-ui"
   ],
   "dependencies": {
     "apache-arrow": "^21.2.0",

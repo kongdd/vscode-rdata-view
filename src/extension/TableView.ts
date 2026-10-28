@@ -58,7 +58,7 @@ export class TableView implements vscode.Disposable {
   constructor(private uri: vscode.Uri, private panel: vscode.WebviewPanel, private root: vscode.Uri,
     private options: ViewOptions = {}) {
     if (fileType(uri.fsPath) !== 'arrow') this.prewarmR();
-    const webRoot = vscode.Uri.joinPath(root, 'webview-ui', 'dist');
+    const webRoot = vscode.Uri.joinPath(root, 'src', 'webview-ui', 'dist');
     panel.webview.options = { enableScripts: true, localResourceRoots: [webRoot] };
     const nonce = randomBytes(16).toString('hex');
     const asset = (name: string) => panel.webview.asWebviewUri(vscode.Uri.joinPath(webRoot, name));

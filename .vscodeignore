@@ -6,5 +6,5 @@
 !assets/icon.png
 !dist/extension.js
 !dist/*.R
-!webview-ui/dist/main.js
-!webview-ui/dist/index.css
+!src/webview-ui/dist/main.js
+!src/webview-ui/dist/index.css
