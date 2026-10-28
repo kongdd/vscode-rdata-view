@@ -6,7 +6,7 @@ filter <- Sys.getenv("RDATA_FILTER")
 code <- Sys.getenv("RDATA_QUERY")
 if (nzchar(code)) {
   execute_query(Sys.getenv("RDATA_INPUT"), Sys.getenv("RDATA_OUTPUT"),
-                Sys.getenv("RDATA_SELECTED"), code, filter)
+                Sys.getenv("RDATA_SELECTED"), code, filter, cwd = Sys.getenv("RDATA_CWD"))
 } else if (nzchar(filter)) {
   write_arrow_filter(open_arrow_filter(Sys.getenv("RDATA_INPUT"), filter),
                      Sys.getenv("RDATA_OUTPUT"), Sys.getenv("RDATA_START", "0"), Sys.getenv("RDATA_END", "0"))

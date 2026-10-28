@@ -1,6 +1,6 @@
 import { beforeAll, afterAll, afterEach, describe, expect, it } from 'vitest';
 import { execFile } from 'node:child_process';
-import { mkdtemp, readFile, readdir, rm, stat, utimes, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, realpath, rm, stat, utimes, writeFile } from 'node:fs/promises';
 import { promisify } from 'node:util';
 import { tmpdir } from 'node:os';
 import { join, resolve, dirname } from 'node:path';
@@ -28,6 +28,17 @@ describe.skipIf(!executable)('R formats (set RDATA_TEST_R to run)', () => {
   });
   afterEach(async () => { await Promise.all(readers.map(reader => reader.dispose())); readers = []; });
   afterAll(async () => { disposeRWorker(); if (dir) await rm(dir, { recursive: true, force: true }); });
+
+  it.each([options, served])('executes queries in the requested working directory', async settings => {
+    const cwd = join(dir, '项目 space');
+    await mkdir(cwd, { recursive: true });
+    const query = (code: string) => runRQuery(join(dir, 'lz4.feather'), { ...settings, cwd }, code);
+    await queryRows(await query('writeLines("ok", "out.txt"); data.frame(path = getwd())'));
+    expect(await readFile(join(cwd, 'out.txt'), 'utf8')).toBe('ok\n');
+    await expect(query('setwd(tempdir()); stop("failed")')).rejects.toThrow('failed');
+    const rows = await queryRows(await query('data.frame(path = getwd())'));
+    expect(rows[0][0]).toBe(await realpath(cwd));
+  });
 
   it('reads spatial layers, geometry summaries, empty layers and exports attributes', async context => {
     if (!(await readdir(dir)).includes('layers.gpkg')) context.skip(); // sf 未安装时跳过空间格式。

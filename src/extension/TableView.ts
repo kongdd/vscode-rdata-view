@@ -106,8 +106,11 @@ export class TableView implements vscode.Disposable {
 
   private rOptions(signal?: AbortSignal) {
     const config = vscode.workspace.getConfiguration('rdataView');
+    const source = vscode.Uri.file(this.options.protectedPaths?.at(-1) ?? this.uri.fsPath);
+    const cwd = vscode.workspace.getWorkspaceFolder(source)?.uri.fsPath
+      ?? vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? dirname(source.fsPath);
     return {
-      executable: rExecutable(this.uri), script: join(this.root.fsPath, 'dist', 'read-table.R'),
+      cwd, executable: rExecutable(this.uri), script: join(this.root.fsPath, 'dist', 'read-table.R'),
       server: join(this.root.fsPath, 'dist', 'read-table-server.R'),
       timeout: config.get<number>('r.timeoutSeconds', 120) * 1000,
       idleTimeoutSeconds: config.get<number>('r.idleTimeoutSeconds', 300), signal,

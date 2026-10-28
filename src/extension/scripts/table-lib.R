@@ -220,7 +220,11 @@ write_arrow_filter <- function(state, output, start, end) {
 
 # 显式执行用户 R 代码：df 是当前表，Arrow 保持惰性，结果须为可查看的表或矩阵。
 # 与只读分页不同，最终 Arrow 结果自动物化；排序/聚合可能处理整表并产生完整临时文件。
-execute_query <- function(input, output, selected, encoded, filter = "", cached = NULL) {
+execute_query <- function(input, output, selected, encoded, filter = "", cached = NULL, cwd = "") {
+  if (nzchar(cwd)) {
+    previous <- setwd(decode_text(cwd))
+    on.exit(setwd(previous), add = TRUE)
+  }
   for (pkg in c("data.table", "magrittr", "dplyr", "lubridate")) {
     need(pkg)
     suppressPackageStartupMessages(library(pkg, character.only = TRUE))

@@ -33,6 +33,7 @@
   import { uiStore } from '../stores/ui.svelte.js';
 
   let code = $state('df %>% head(10)');
+  let scrollTop = $state(0);
 </script>
 
 <form class="r-command" aria-busy={uiStore.queryRunning} onsubmit={(event) => {
@@ -43,8 +44,14 @@
   postMessage({ type: 'EXECUTE_R_QUERY', payload: { code } });
 }}>
   <div class="command-editor">
-    <span class="language" aria-hidden="true">R</span>
-    <textarea bind:value={code} use:autosizeCommand rows="1" aria-label="R command"
+    <!-- <span class="language" aria-hidden="true">R</span> -->
+    <div class="line-numbers" aria-hidden="true">
+      <div style:transform={`translateY(-${scrollTop}px)`}>
+        {#each code.split('\n') as _, i}<div>{i + 1}</div>{/each}
+      </div>
+    </div>
+    <textarea bind:value={code} use:autosizeCommand rows="1" wrap="off" aria-label="R command"
+      onscroll={(event) => scrollTop = event.currentTarget.scrollTop}
       aria-keyshortcuts="Meta+Enter Control+Enter Meta+Shift+M Tab" onkeydown={handleCommandKey}
       onfocus={() => postMessage({ type: 'PREPARE_R' })} spellcheck="false"
       title="df is the current table (lazy for Arrow). data.table, magrittr, dplyr and lubridate are loaded before execution."
@@ -86,7 +93,20 @@
   }
 
   .command-editor:focus-within { border-color: var(--gm-accent); }
-  .language { padding: 4px 2px; color: var(--gm-fg-muted); font: 600 11px/20px ui-monospace, monospace; }
+  /* .language { padding: 4px 2px; color: var(--gm-fg-muted); font: 600 11px/20px ui-monospace, monospace; } */
+
+  .line-numbers {
+    max-height: 160px;
+    overflow: hidden;
+    padding: 4px 6px;
+    background: color-mix(in srgb, var(--gm-input-bg) 90%, var(--gm-fg) 10%);
+    color: var(--vscode-editorLineNumber-foreground, var(--gm-fg-muted));
+    text-align: right;
+    font-family: var(--vscode-editor-font-family, ui-monospace, monospace);
+    font-size: var(--vscode-editor-font-size, 12px);
+    line-height: 20px;
+    user-select: none;
+  }
 
   textarea {
     flex: 1;

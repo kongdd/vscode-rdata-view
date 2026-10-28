@@ -9,7 +9,7 @@ suppressWarnings(suppressMessages({
 
 # 仅保存必须完整解码的活动对象；隐藏/关闭时释放，进程退出后按需重读。
 tables <- new.env(parent = emptyenv())
-serve <- function(input, output, selected, start, end, paged, sample, classes, key, action, filter = "", code = "") {
+serve <- function(input, output, selected, start, end, paged, sample, classes, key, action, filter = "", code = "", cwd = "") {
   if (action == "ping") {
     if (nzchar(filter)) need("dplyr")
     return(invisible(TRUE))
@@ -21,7 +21,7 @@ serve <- function(input, output, selected, start, end, paged, sample, classes, k
   }
   if (action == "query") {
     cached <- if (nzchar(key) && exists(key, tables, inherits = FALSE)) tables[[key]] else NULL
-    return(execute_query(input, output, selected, code, filter, cached))
+    return(execute_query(input, output, selected, code, filter, cached, cwd))
   }
   if (action == "filter") {
     if (!exists(key, tables, inherits = FALSE)) tables[[key]] <- open_arrow_filter(input, filter)
@@ -51,13 +51,13 @@ repeat {
   if (!nzchar(line)) next
   field <- strsplit(line, "\t", fixed = TRUE)[[1L]]
   # strsplit 会丢掉末尾空字段，显式补齐为 ""
-  if (length(field) < 12L) field <- c(field, rep("", 12L - length(field)))
+  if (length(field) < 13L) field <- c(field, rep("", 13L - length(field)))
   reply <- tryCatch({
     suppressWarnings(suppressMessages(serve(
       input = field[[1L]], output = field[[2L]], selected = field[[3L]],
       start = field[[4L]], end = field[[5L]],
       paged = identical(field[[6L]], "1"), sample = identical(field[[7L]], "1"),
-      classes = field[[8L]], key = field[[9L]], action = field[[10L]], filter = field[[11L]], code = field[[12L]]
+      classes = field[[8L]], key = field[[9L]], action = field[[10L]], filter = field[[11L]], code = field[[12L]], cwd = field[[13L]]
     )))
     "ok"
   }, error = function(e) paste0("error\t", gsub("[\t\r\n]+", " ", conditionMessage(e))))

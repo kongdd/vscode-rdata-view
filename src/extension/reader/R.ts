@@ -13,7 +13,7 @@ import type { CellValue } from '../../shared/schema.js';
 const exec = promisify(execFile);
 export interface ROptions {
   executable: string; script: string; timeout: number; server?: string;
-  signal?: AbortSignal; selected?: string; paged?: boolean; idleTimeoutSeconds?: number; filter?: string;
+  signal?: AbortSignal; selected?: string; paged?: boolean; idleTimeoutSeconds?: number; filter?: string; cwd?: string;
 }
 
 /** 一次扫描得到换行数与是否含引号（约 4GB/s）。带引号时行号与记录号不一致，需整体转换。 */
@@ -37,7 +37,7 @@ async function prepare(path: string, options: ROptions, start = 0, end = 1, extr
       const request = [path, output, options.selected ?? '', start, end,
         extra.RDATA_PAGED === '1' ? '1' : '0', extra.RDATA_SAMPLE === '1' ? '1' : '0',
         extra.RDATA_CLASSES ?? '', extra.RDATA_CACHE ?? '', extra.RDATA_QUERY ? 'query' : extra.RDATA_FILTER ? 'filter' : '',
-        extra.RDATA_FILTER ?? '', extra.RDATA_QUERY ?? ''].join('\t');
+        extra.RDATA_FILTER ?? '', extra.RDATA_QUERY ?? '', extra.RDATA_CWD ?? ''].join('\t');
       const reply = await runR(options.executable, options.server, request, options.signal, options.timeout, options.idleTimeoutSeconds);
       if (reply !== 'ok') throw new Error(reply.replace(/^error\t/, ''));
     } else {
@@ -73,6 +73,7 @@ export async function runRQuery(
   const result = await prepare(path, options, 0, 0, {
     ...(options.filter ? { RDATA_FILTER: Buffer.from(options.filter, 'utf8').toString('hex') } : {}),
     ...extra, RDATA_QUERY: Buffer.from(code, 'utf8').toString('hex'),
+    RDATA_CWD: Buffer.from(options.cwd ?? '', 'utf8').toString('hex'),
   });
   try {
     options.signal?.throwIfAborted();

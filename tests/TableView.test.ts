@@ -11,7 +11,10 @@ const { settings } = vi.hoisted(() => ({ settings: { threshold: 64, idleTimeoutS
 vi.mock('vscode', async () => {
   const { join } = await import('node:path');
   return {
-    Uri: { joinPath: (root: { fsPath: string }, ...parts: string[]) => ({ fsPath: join(root.fsPath, ...parts), toString() { return this.fsPath; } }) },
+    Uri: {
+      file: (fsPath: string) => ({ fsPath }),
+      joinPath: (root: { fsPath: string }, ...parts: string[]) => ({ fsPath: join(root.fsPath, ...parts), toString() { return this.fsPath; } }),
+    },
     workspace: {
       get isTrusted() { return settings.trusted; },
       getConfiguration: () => ({ get: (name: string, fallback: unknown) => {
