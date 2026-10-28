@@ -1,7 +1,7 @@
 {
   "name": "rdata-view",
   "displayName": "R Data View",
-  "description": "View R fst, qs2, qdata, rda, rds, CSV, Excel, Arrow, SHP and GPKG tables using a fast, read-only grid.",
+  "description": "View R fst, qs2, qdata, rda, rds, CSV, Excel, Arrow, SHP, GPKG and GeoJSON tables using a fast, read-only grid.",
   "version": "0.1.1",
   "publisher": "kongdd",
   "license": "MIT",
@@ -29,6 +29,7 @@
     "arrow",
     "shp",
     "gpkg",
+    "geojson",
     "table"
   ],
   "icon": "assets/icon.png",
@@ -94,6 +95,12 @@
           },
           {
             "filenamePattern": "*.GPKG"
+          },
+          {
+            "filenamePattern": "*.geojson"
+          },
+          {
+            "filenamePattern": "*.GEOJSON"
           }
         ],
         "priority": "default"
@@ -109,7 +116,7 @@
       "explorer/context": [
         {
           "command": "rdataView.open",
-          "when": "!explorerResourceIsFolder && resourceExtname =~ /\\.(fst|qs2|qdata|rda|rdata|rds|csv|tsv|xlsx|arrow|feather|shp|gpkg)$/i",
+          "when": "!explorerResourceIsFolder && resourceExtname =~ /\\.(fst|qs2|qdata|rda|rdata|rds|csv|tsv|xlsx|arrow|feather|shp|gpkg|geojson)$/i",
           "group": "navigation@10"
         }
       ]

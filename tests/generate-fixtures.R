@@ -39,6 +39,7 @@ saveRDS(nested, file.path(dir, "nested.rds"))
 if (requireNamespace("sf", quietly = TRUE)) {
   points <- sf::st_as_sf(data.frame(id = 1:3, x = 1:3, y = 4:6), coords = c("x", "y"), crs = 4326)
   sf::st_write(points, file.path(dir, "points.shp"), quiet = TRUE)
+  sf::st_write(points, file.path(dir, "points.geojson"), quiet = TRUE)
   sf::st_write(points, file.path(dir, "layers.gpkg"), layer = "points", quiet = TRUE)
   sf::st_write(points[0, ], file.path(dir, "layers.gpkg"), layer = "empty", quiet = TRUE)
 }

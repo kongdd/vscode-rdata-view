@@ -20,7 +20,7 @@ function fileType(path: string): FileType {
   if (ext === 'xlsx') return 'excel';
   if (ext === 'feather') return 'arrow';
   if (ext === 'rdata') return 'rda';
-  if (['csv', 'arrow', 'rda', 'rds', 'fst', 'qs2', 'qdata', 'shp', 'gpkg'].includes(ext)) return ext as FileType;
+  if (['csv', 'arrow', 'rda', 'rds', 'fst', 'qs2', 'qdata', 'shp', 'gpkg', 'geojson'].includes(ext)) return ext as FileType;
   throw new Error('Unsupported file format: ' + ext);
 }
 

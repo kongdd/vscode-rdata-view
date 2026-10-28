@@ -43,15 +43,21 @@ describe.skipIf(!executable)('R formats (set RDATA_TEST_R to run)', () => {
   it('reads spatial layers, geometry summaries, empty layers and exports attributes', async context => {
     if (!(await readdir(dir)).includes('layers.gpkg')) context.skip(); // sf 未安装时跳过空间格式。
     const shp = await RReader.open(join(dir, 'points.shp'), served);
+    const geojson = await RReader.open(join(dir, 'points.geojson'), served);
     const gpkg = await RReader.open(join(dir, 'layers.gpkg'), { ...served, selected: 'points' });
     const empty = await RReader.open(join(dir, 'layers.gpkg'), { ...served, selected: 'empty' });
-    readers.push(shp, gpkg, empty);
+    readers.push(shp, geojson, gpkg, empty);
     expect(gpkg.choices).toEqual(['points', 'empty']);
     await expect(RReader.open(join(dir, 'layers.gpkg'), { ...served, selected: 'missing' })).rejects.toThrow('Unknown object');
     await expect(RReader.open(join(dir, 'layers.gpkg'), { ...served, signal: AbortSignal.abort() })).rejects.toThrow();
     expect(gpkg.spatial).toMatchObject({ crs: expect.any(String), types: 'POINT' });
     expect(await gpkg.readRows(0, 3)).toEqual([[1, 'POINT'], [2, 'POINT'], [3, 'POINT']]);
     expect(await shp.readRows(1, 2)).toEqual([[2, 'POINT']]);
+    expect(geojson.spatial).toMatchObject({ types: 'POINT' });
+    expect(await geojson.readRows(1, 3)).toEqual([[2, 'POINT'], [3, 'POINT']]);
+    await geojson.suspend();
+    geojson.resume();
+    expect(await geojson.readRows(0, 1)).toEqual([[1, 'POINT']]);
     expect(empty.totalRows).toBe(0);
     await gpkg.suspend();
     gpkg.resume();

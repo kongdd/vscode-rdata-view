@@ -103,7 +103,7 @@ export class RReader extends FilePager {
     this.filtered = /\.(arrow|feather)$/i.test(path) && !!options.filter?.trim();
     this.ranged = !this.fst && options.paged === true;
     // CSV 仍走原有磁盘转换/行区间路径，不把大文本整表常驻冒充分页。
-    this.cacheKey = options.server && (this.filtered || /\.(rds|rda|rdata|qs2|qdata|xlsx|shp|gpkg)$/i.test(path)) ? randomUUID() : '';
+    this.cacheKey = options.server && (this.filtered || /\.(rds|rda|rdata|qs2|qdata|xlsx|shp|gpkg|geojson)$/i.test(path)) ? randomUUID() : '';
   }
 
   static async open(path: string, options: ROptions): Promise<RReader> {
@@ -121,7 +121,7 @@ export class RReader extends FilePager {
       const names = (await readFile(file.path + '.names', 'utf8')).trimEnd().split('\n').map(name => Buffer.from(name, 'hex').toString('utf8'));
       reader.selected = names.shift() ?? '';
       reader.choices = names;
-      if (/\.(shp|gpkg)$/i.test(path)) {
+      if (/\.(shp|gpkg|geojson)$/i.test(path)) {
         const fields = await readFile(file.path + '.spatial', 'utf8').catch(() => '');
         if (fields) {
           const [geometry, crs, types] = fields.trimEnd().split('\n').map(value => Buffer.from(value, 'hex').toString('utf8'));

@@ -11,7 +11,7 @@
   const jumpDisabled = $derived(uiStore.loading || gridStore.filteredRows === 0);
   // 有具名对象（rda、qs 多对象、xlsx 工作表）时显示对象名；多个才可点击切换。路径已由面包屑给出。
   const objects = $derived(gridStore.selectedSheet ? gridStore.availableSheets : []);
-  const objectsLabel = $derived(gridStore.fileType === 'excel' ? 'Sheets' : gridStore.fileType === 'gpkg' || gridStore.fileType === 'shp' ? 'Layers' : 'Tables');
+  const objectsLabel = $derived(gridStore.fileType === 'excel' ? 'Sheets' : gridStore.fileType === 'gpkg' || gridStore.fileType === 'shp' || gridStore.fileType === 'geojson' ? 'Layers' : 'Tables');
 </script>
 
 <svelte:window onclick={(event) => {
