@@ -72,6 +72,7 @@ class GridStore {
   rowJump = $state<{ row: number } | null>(null);
   availableSheets = $state<string[]>([]);
   selectedSheet = $state('');
+  spatial = $state<InitPayload['spatial']>();
   cacheVersion = $state(0);
   private rows: CellValue[][] = [];
   private view: number[] | null = null;
@@ -93,6 +94,7 @@ class GridStore {
       fileName: payload.fileName, fileType: payload.fileType, totalRows: payload.totalRows,
       totalBytes: payload.totalBytes, schema: payload.schema, paged: payload.paged,
       availableSheets: payload.choices, selectedSheet: payload.selected, dplyrFilter: payload.dplyrFilter ?? '',
+      spatial: payload.spatial,
     });
     if (!sameTable) {
       this.start = 0;

@@ -11,7 +11,7 @@ const escape = (value: CellValue): string => {
 /** Write beside the destination, then rename. Cancellation never leaves a partial CSV. */
 export async function exportCsv(
   reader: PagedReader, source: string, target: string, signal: AbortSignal,
-  progress: (pct: number) => void, order?: number[], protectedPaths: readonly string[] = [],
+  progress: (pct: number) => void, order?: number[], protectedPaths: readonly string[] = [], excludedColumn?: string,
 ): Promise<void> {
   const canonical = async (path: string) => (await realpath(path).catch(() => resolve(path)));
   const destination = await canonical(target);
@@ -24,7 +24,9 @@ export async function exportCsv(
   const path = join(dir, 'table.csv');
   const file = await open(path, 'wx');
   try {
-    await file.writeFile(reader.schema.map(field => escape(field.name)).join(',') + '\r\n');
+    const columns = reader.schema.map((field, index) => ({ field, index }))
+      .filter(({ field }) => field.name !== excludedColumn);
+    await file.writeFile(columns.map(({ field }) => escape(field.name)).join(',') + '\r\n');
     // Small tables may export their filtered/sorted view; paged tables export in source order.
     const smallRows = order ? await reader.readRows(0, reader.totalRows) : undefined;
     const count = order?.length ?? reader.totalRows;
@@ -33,7 +35,7 @@ export async function exportCsv(
       const rows = order
         ? order.slice(start, start + 5000).map(index => smallRows![index])
         : await reader.readRows(start, Math.min(start + 5000, count));
-      await file.writeFile(rows.map(row => row.map(escape).join(',')).join('\r\n') + '\r\n');
+      await file.writeFile(rows.map(row => columns.map(({ index }) => escape(row[index])).join(',')).join('\r\n') + '\r\n');
       progress(Math.round(Math.min(start + 5000, count) / count * 100));
     }
     signal.throwIfAborted();

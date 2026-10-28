@@ -11,7 +11,7 @@
   const jumpDisabled = $derived(uiStore.loading || gridStore.filteredRows === 0);
   // 有具名对象（rda、qs 多对象、xlsx 工作表）时显示对象名；多个才可点击切换。路径已由面包屑给出。
   const objects = $derived(gridStore.selectedSheet ? gridStore.availableSheets : []);
-  const objectsLabel = $derived(gridStore.fileType === 'excel' ? 'Sheets' : 'Tables');
+  const objectsLabel = $derived(gridStore.fileType === 'excel' ? 'Sheets' : gridStore.fileType === 'gpkg' || gridStore.fileType === 'shp' ? 'Layers' : 'Tables');
 </script>
 
 <svelte:window onclick={(event) => {
@@ -31,6 +31,11 @@
         </div>
       {/if}
     </div>
+  {/if}
+  {#if gridStore.spatial}
+    <small class="spatial-info" title={`${gridStore.spatial.crs} · ${gridStore.spatial.types || 'Empty geometry'}; geometry coordinates are not shown or exported; the layer is read into R memory`}>
+      {gridStore.spatial.crs} · {gridStore.spatial.types || 'Empty geometry'}
+    </small>
   {/if}
   <input class="search-input" type="search" placeholder={gridStore.paged ? 'Search unavailable in on-demand mode' : 'Search…'}
     disabled={gridStore.paged} value={gridStore.globalSearch}
@@ -80,12 +85,13 @@
       </div>
     {/if}
   </div>
-  <button disabled={uiStore.loading || uiStore.exportProgress !== null} onclick={() => gridStore.exportCsv()} title={gridStore.dplyrFilter ? 'Export all dplyr-filtered rows' : 'Export table (current filter/sort in small-table mode)'}>Export CSV</button>
+  <button disabled={uiStore.loading || uiStore.exportProgress !== null} onclick={() => gridStore.exportCsv()} title={gridStore.spatial ? 'Export attributes only; geometry is excluded' : gridStore.dplyrFilter ? 'Export all dplyr-filtered rows' : 'Export table (current filter/sort in small-table mode)'}>Export CSV</button>
 </div>
 {#if stats}<DatasetStatsPanel onClose={() => stats = false} />{/if}
 
 <style>
   .toolbar { display: flex; align-items: center; gap: 8px; padding: 6px 12px; background: var(--gm-toolbar-bg); border-bottom: 1px solid var(--gm-border); min-height: 38px; flex-shrink: 0; }
+  .spatial-info { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .objects-wrap { position: relative; flex-shrink: 0; }
   .object-name { max-width: 200px; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
   .object-panel { position: absolute; top: 100%; left: 0; z-index: 1000; min-width: 160px; max-height: 360px; overflow: auto; background: var(--gm-menu-bg); border: 1px solid var(--gm-border); border-radius: 5px; box-shadow: 0 4px 16px #0004; }

@@ -1,4 +1,14 @@
 <script module lang="ts">
+  export function autosizeCommand(input: HTMLTextAreaElement) {
+    const resize = () => {
+      input.style.height = 'auto';
+      input.style.height = `${input.scrollHeight}px`;
+    };
+    resize();
+    input.addEventListener('input', resize);
+    return { destroy: () => input.removeEventListener('input', resize) };
+  }
+
   export function handleCommandKey(event: KeyboardEvent & { currentTarget: HTMLTextAreaElement }): void {
     if (event.isComposing) return;
     const execute = event.key === 'Enter' && (event.metaKey || event.ctrlKey);
@@ -25,31 +35,103 @@
   let code = $state('df %>% head(10)');
 </script>
 
-<form class="r-command" onsubmit={(event) => {
+<form class="r-command" aria-busy={uiStore.queryRunning} onsubmit={(event) => {
   event.preventDefault();
   if (uiStore.loading || uiStore.queryRunning || !code.trim()) return;
   uiStore.error = null;
   uiStore.queryRunning = true;
   postMessage({ type: 'EXECUTE_R_QUERY', payload: { code } });
 }}>
-  <textarea bind:value={code} rows="3" aria-label="R command"
-    aria-keyshortcuts="Meta+Enter Control+Enter Meta+Shift+M Tab" onkeydown={handleCommandKey}
-    onfocus={() => postMessage({ type: 'PREPARE_R' })} spellcheck="false"
-    title="df is the current table (lazy for Arrow). data.table, magrittr, dplyr and lubridate are loaded before execution."
-    disabled={uiStore.queryRunning}></textarea>
-  <div class="command-actions">
-    <button type="submit" title="执行（Cmd+Enter / Ctrl+Enter）"
-      disabled={uiStore.loading || uiStore.queryRunning || !code.trim()}>执行 R</button>
-    {#if uiStore.queryRunning}
-      <button type="button" onclick={() => postMessage({ type: 'QUERY_CANCEL' })}>取消</button>
-    {/if}
+  <div class="command-editor">
+    <span class="language" aria-hidden="true">R</span>
+    <textarea bind:value={code} use:autosizeCommand rows="1" aria-label="R command"
+      aria-keyshortcuts="Meta+Enter Control+Enter Meta+Shift+M Tab" onkeydown={handleCommandKey}
+      onfocus={() => postMessage({ type: 'PREPARE_R' })} spellcheck="false"
+      title="df is the current table (lazy for Arrow). data.table, magrittr, dplyr and lubridate are loaded before execution."
+      disabled={uiStore.queryRunning}></textarea>
+    <div class="command-actions">
+      <span class="shortcut" aria-hidden="true">⌘ / Ctrl ↵</span>
+      {#if uiStore.queryRunning}
+        <button class="cancel" type="button" onclick={() => postMessage({ type: 'QUERY_CANCEL' })}>
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4h8v8H4z" /></svg>
+          取消
+        </button>
+      {:else}
+        <button type="submit" title="执行（Cmd+Enter / Ctrl+Enter）"
+          disabled={uiStore.loading || !code.trim()}>
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m5 3 8 5-8 5z" /></svg>
+          执行 R
+        </button>
+      {/if}
+    </div>
   </div>
 </form>
 
 <style>
-  .r-command { display: flex; gap: 8px; padding: 6px 12px; border-bottom: 1px solid var(--gm-border); flex-shrink: 0; }
-  textarea { flex: 1; min-width: 120px; min-height: 48px; resize: vertical; padding: 6px 8px; background: var(--gm-input-bg); color: var(--gm-fg); border: 1px solid var(--gm-border); border-radius: 4px; font-family: var(--vscode-editor-font-family, monospace); font-size: 12px; }
-  .command-actions { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
-  button { padding: 4px 10px; background: var(--gm-toolbar-bg); color: var(--gm-fg); border: 1px solid var(--gm-border); border-radius: 4px; cursor: pointer; }
+  .r-command {
+    padding: 5px 12px;
+    border-bottom: 1px solid var(--gm-border);
+    flex-shrink: 0;
+    container-type: inline-size;
+  }
+
+  .command-editor {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 3px 6px;
+    background: var(--gm-input-bg);
+    border: 1px solid var(--gm-border);
+    border-radius: 4px;
+  }
+
+  .command-editor:focus-within { border-color: var(--gm-accent); }
+  .language { padding: 4px 2px; color: var(--gm-fg-muted); font: 600 11px/20px ui-monospace, monospace; }
+
+  textarea {
+    flex: 1;
+    min-width: 0;
+    min-height: 28px;
+    max-height: 160px;
+    margin: 0;
+    padding: 4px 0;
+    resize: none;
+    border: none;
+    outline: none;
+    background: transparent;
+    color: var(--gm-fg);
+    font-family: var(--vscode-editor-font-family, ui-monospace, monospace);
+    font-size: var(--vscode-editor-font-size, 12px);
+    line-height: 20px;
+    tab-size: 2;
+  }
+
+  .command-actions { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+  .shortcut { color: var(--gm-fg-subtle); font-size: 10px; white-space: nowrap; }
+
+  button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    min-height: 28px;
+    padding: 3px 8px;
+    border: none;
+    border-radius: 3px;
+    background: var(--gm-accent-light);
+    color: var(--gm-accent);
+    font: inherit;
+    font-size: 11px;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+
+  button:hover:not(:disabled) { background: color-mix(in srgb, var(--gm-accent) 25%, transparent); }
   button:disabled { opacity: .4; cursor: default; }
+  button.cancel { background: var(--gm-hover-bg); color: var(--gm-fg); }
+  svg { width: 12px; height: 12px; fill: currentColor; }
+
+  @container (max-width: 420px) {
+    .shortcut { display: none; }
+  }
 </style>

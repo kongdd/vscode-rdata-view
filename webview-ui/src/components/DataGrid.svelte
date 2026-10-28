@@ -855,20 +855,28 @@
     font-weight: 400;
   }
 
-  /* Resize handle — 6px wide strip on the right edge of the header cell */
+  /* Invisible 6px hit area; only show a thin line on hover or drag. */
   .resize-handle {
     position: absolute;
     right: -3px;
     top: 0;
     width: 6px;
     height: 100%;
+    appearance: none;
+    padding: 0;
+    border: none;
+    border-radius: 0;
+    background: transparent;
     cursor: col-resize;
     z-index: 3;
   }
 
-  .resize-handle:hover,
-  .resize-handle:active {
-    background: var(--vscode-focusBorder);
+  .resize-handle:hover::after,
+  .resize-handle:active::after {
+    content: '';
+    position: absolute;
+    inset: 0 2px;
+    background: var(--gm-accent);
     opacity: 0.7;
   }
 

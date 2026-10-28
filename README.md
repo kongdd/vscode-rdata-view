@@ -13,7 +13,8 @@ R语言很多数据格式，支持高性能压缩，支持高性能读写，但�
 **支持**：
 
 - R语言数据：rds、rda、fst、qs2、qdata，无惰性读取支持
-- 通用数据：CSV、Arrow / Feather
+- 通用数据：CSV、Arrow / Feather、Excel
+- 空间数据：SHP、GPKG 的属性表
 
 <!-- - **像表格一样浏览**：调整列宽、隐藏与冻结列，跳转到指定行，选择并复制单元格或区域。
 - **小表灵活探索，大表分页浏览**：小表支持排序、筛选、搜索和列统计；大表按需加载页面。
@@ -30,8 +31,11 @@ R语言很多数据格式，支持高性能压缩，支持高性能读写，但�
 | RDS / RData | 完整解码驻留 R，当前页转临时 Arrow | arrow |
 | CSV | 默认整表转临时 Arrow；超过 512 MiB 时尝试行区间读取，含引号则回退整表转换 | data.table、arrow |
 | XLSX | 所选工作表完整读入 R，当前页转临时 Arrow | readxl、arrow |
+| SHP / GPKG | 所选图层完整读入 R，仅属性和几何类型驻留，当前页转临时 Arrow | sf、arrow |
 
 - RData、`qs_savem()` 多对象文件及 XLSX 可在左上角切换对象或工作表；只列出可查看的表和矩阵。
+- SHP 需要同名 `.shx`、`.dbf` 等配套文件；GPKG 可在左上角切换图层。空间图层显示 CRS、几何类型和属性，几何列仅显示类型，不显示坐标或地图。CSV 只导出属性，不含几何列。
+- SHP / GPKG 使用 `sf::st_read()` 完整读取图层，加载期间可能占用大量内存；分页仅限读取后的属性表，并非源文件随机读取。
 - IPC stream 需通过 R 整体转换为 IPC 文件；单次 R 脚本调用仍保留整表转换路径。
 - CSV 的 `fread(skip, nrows)` 仍需扫描文本，不等于随机访问。
 - 扩展暂不支持 Parquet、NDJSON 和分区数据集；[R arrow 本身的支持范围](https://arrow.apache.org/docs/r/reference/index.html)不代表扩展功能。
@@ -100,7 +104,7 @@ arf --vanilla -f scripts/bench-arrow-dplyr.R
 2. 在 R 中安装所需依赖（只看 Arrow / Feather 文件可跳过）：
 
   ```r
-  install.packages(c("arrow", "dplyr", "magrittr", "lubridate", "fst", "qs2", "readxl", "data.table"))
+  install.packages(c("arrow", "dplyr", "magrittr", "lubridate", "fst", "qs2", "readxl", "data.table", "sf"))
   ```
 
 已有 vscode-R 配置通常无需额外设置。找不到 R 时，在设置中指定 `rdataView.r.executable`，支持 R 或 arf。
@@ -129,7 +133,7 @@ R 文件在打开面板时即预热 R，与界面资源传输重叠；Arrow 在�
 ## 4 使用前了解
 
 - 大表的前端列菜单不提供全表排序、筛选、搜索和统计；Arrow 全表筛选使用专用 dplyr 框，其他数据处理使用 R 命令。
-- RDS、RData、qs2、qdata 和 Excel 仍需完整解码到 R 内存；常看大表，优先选择 fst 或分批写入的 Feather V2。
+- RDS、RData、qs2、qdata、Excel、SHP 和 GPKG 仍需完整解码到 R 内存；常看大表，优先选择 fst 或分批写入的 Feather V2。
 - 查看磁盘文件，不连接已有 R 会话；暂不支持 Parquet。
 
 <!-- ## 5 更多

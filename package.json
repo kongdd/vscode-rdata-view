@@ -1,7 +1,7 @@
 {
   "name": "rdata-view",
   "displayName": "R Data View",
-  "description": "View R fst, qs2, qdata, rda, rds, CSV, Excel and Arrow tables using a fast, read-only grid.",
+  "description": "View R fst, qs2, qdata, rda, rds, CSV, Excel, Arrow, SHP and GPKG tables using a fast, read-only grid.",
   "version": "0.1.1",
   "publisher": "kongdd",
   "license": "MIT",
@@ -27,6 +27,8 @@
     "csv",
     "xlsx",
     "arrow",
+    "shp",
+    "gpkg",
     "table"
   ],
   "icon": "assets/icon.png",
@@ -80,6 +82,18 @@
           },
           {
             "filenamePattern": "*.feather"
+          },
+          {
+            "filenamePattern": "*.shp"
+          },
+          {
+            "filenamePattern": "*.gpkg"
+          },
+          {
+            "filenamePattern": "*.SHP"
+          },
+          {
+            "filenamePattern": "*.GPKG"
           }
         ],
         "priority": "default"
@@ -95,7 +109,7 @@
       "explorer/context": [
         {
           "command": "rdataView.open",
-          "when": "!explorerResourceIsFolder && resourceExtname =~ /\\.(fst|qs2|qdata|rda|rdata|rds|csv|tsv|xlsx|arrow|feather)$/i",
+          "when": "!explorerResourceIsFolder && resourceExtname =~ /\\.(fst|qs2|qdata|rda|rdata|rds|csv|tsv|xlsx|arrow|feather|shp|gpkg)$/i",
           "group": "navigation@10"
         }
       ]

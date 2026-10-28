@@ -27,6 +27,26 @@ read_rda <- function(input, selected) {
   result(env[[selected]], selected, choices)
 }
 
+read_spatial <- function(input, selected) {
+  need("sf")
+  choices <- sf::st_layers(input)$name
+  selected <- pick(choices, selected)
+  x <- sf::st_read(input, layer = selected, quiet = TRUE, int64_as_string = TRUE)
+  if (!inherits(x, "sf")) return(result(x, selected, choices))
+  geometry <- attr(x, "sf_column")
+  crs <- sf::st_crs(x)
+  types <- as.character(sf::st_geometry_type(x, by_geometry = TRUE))
+  table <- sf::st_drop_geometry(x)
+  # 避免几何列名与属性列冲突；仅显示类型，不传输坐标。
+  geometry <- make.unique(c(names(table), geometry))[[ncol(table) + 1L]]
+  table[[geometry]] <- types
+  out <- result(table, selected, choices)
+  crs_name <- crs$input
+  if (is.null(crs_name) || is.na(crs_name) || !nzchar(crs_name)) crs_name <- "Unknown CRS"
+  out$spatial <- c(geometry, crs_name, paste(unique(types), collapse = ", "))
+  out
+}
+
 read_xlsx <- function(input, selected) {
   need("readxl")
   choices <- readxl::excel_sheets(input)
@@ -101,6 +121,7 @@ normalize <- function(table) {
 write_table <- function(x, output) {
   hex <- function(s) paste(format(charToRaw(enc2utf8(s))), collapse = "")
   writeLines(vapply(c(x$selected, x$choices), hex, character(1)), paste0(output, ".names"))
+  if (!is.null(x$spatial)) writeLines(vapply(x$spatial, hex, character(1)), paste0(output, ".spatial"))
   arrow::write_feather(x$table, output, compression = "zstd", chunk_size = 65536L)
 }
 
@@ -113,6 +134,7 @@ load_table <- function(input, output = "", selected = "", start = 0, end = 1,
   x <- switch(format,
     rda = , rdata = read_rda(input, selected),
     xlsx = read_xlsx(input, selected),
+    shp = , gpkg = read_spatial(input, selected),
     fst = read_fst(input, output, start, end),
     qs2 = , qdata = read_qs(input, format, selected),
     csv = , tsv = read_csv(input, format, start, end, paged, sample, classes),

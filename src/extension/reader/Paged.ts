@@ -1,4 +1,5 @@
-import { stat } from 'node:fs/promises';
+import { readdir, stat } from 'node:fs/promises';
+import { basename, dirname, extname, join } from 'node:path';
 import type { CellValue, ColumnSchema } from '../../shared/schema.js';
 
 export interface PagedReader {
@@ -12,7 +13,17 @@ export interface PagedReader {
 
 export async function fileStamp(path: string): Promise<string> {
   const { size, mtimeMs, ino } = await stat(path);
-  return `${size}:${mtimeMs}:${ino}`;
+  const stamp = `${size}:${mtimeMs}:${ino}`;
+  if (extname(path).toLowerCase() !== '.shp') return stamp;
+  const dir = dirname(path);
+  const stem = basename(path, extname(path)).toLowerCase();
+  const files = (await readdir(dir)).filter(name => basename(name, extname(name)).toLowerCase() === stem &&
+    ['.shx', '.dbf', '.prj', '.cpg', '.qix', '.sbn', '.sbx'].includes(extname(name).toLowerCase())).sort();
+  const parts = await Promise.all(files.map(async name => {
+    const info = await stat(join(dir, name));
+    return `${name}:${info.size}:${info.mtimeMs}:${info.ino}`;
+  }));
+  return JSON.stringify([stamp, ...parts]);
 }
 
 /** Serialize reads and teardown; never retain the last page in the queue's result. */

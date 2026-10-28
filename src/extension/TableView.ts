@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
-import { stat } from 'node:fs/promises';
-import { basename, extname, join } from 'node:path';
+import { readdir, stat } from 'node:fs/promises';
+import { basename, dirname, extname, join } from 'node:path';
 import { homedir } from 'node:os';
 import { randomBytes } from 'node:crypto';
 import { ArrowFileReader, ArrowStreamError } from './reader/Arrow.js';
@@ -20,7 +20,7 @@ function fileType(path: string): FileType {
   if (ext === 'xlsx') return 'excel';
   if (ext === 'feather') return 'arrow';
   if (ext === 'rdata') return 'rda';
-  if (['csv', 'arrow', 'rda', 'rds', 'fst', 'qs2', 'qdata'].includes(ext)) return ext as FileType;
+  if (['csv', 'arrow', 'rda', 'rds', 'fst', 'qs2', 'qdata', 'shp', 'gpkg'].includes(ext)) return ext as FileType;
   throw new Error('Unsupported file format: ' + ext);
 }
 
@@ -189,6 +189,7 @@ export class TableView implements vscode.Disposable {
       this.send({ type: 'INIT', payload: {
         fileType: type, fileName: basename(this.uri.fsPath), totalRows: reader.totalRows, totalBytes,
         schema: reader.schema, rows, paged: this.paged, choices, selected: this.selected, dplyrFilter: this.filter,
+        spatial: reader instanceof RReader ? reader.spatial : undefined,
       } });
     } catch (error) {
       if (opened) {
@@ -274,9 +275,19 @@ export class TableView implements vscode.Disposable {
         if (!target) { this.send({ type: 'EXPORT_DONE', payload: {} }); return; }
         if (target.scheme !== 'file') throw new Error('Export requires a local file');
         controller.signal.throwIfAborted();
+        const protectedPaths = [...(this.options.protectedPaths ?? [])];
+        if (fileType(this.uri.fsPath) === 'shp') {
+          const dir = dirname(this.uri.fsPath);
+          const stem = basename(this.uri.fsPath, extname(this.uri.fsPath)).toLowerCase();
+          const siblings = await readdir(dir);
+          protectedPaths.push(...siblings.filter(name => basename(name, extname(name)).toLowerCase() === stem &&
+            ['.shx', '.dbf', '.prj', '.cpg', '.qix', '.sbn', '.sbx'].includes(extname(name).toLowerCase()))
+            .map(name => join(dir, name)));
+        }
         await exportCsv(reader, this.uri.fsPath, target.fsPath, controller.signal,
           pct => this.send({ type: 'EXPORT_PROGRESS', payload: { pct } }),
-          this.paged ? undefined : message.payload.order, this.options.protectedPaths);
+          this.paged ? undefined : message.payload.order, protectedPaths,
+          reader instanceof RReader ? reader.spatial?.geometry : undefined);
         this.send({ type: 'EXPORT_DONE', payload: { path: target.fsPath } });
       } catch (error) {
         this.send({ type: 'EXPORT_DONE', payload: { error: controller.signal.aborted ? 'Export cancelled' : String(error) } });

@@ -58,6 +58,7 @@ arf --vanilla --slave -f tests/read-arrow-rows.R
 ```
 
 - 按改动范围运行测试；纯文档修改不必重复构建。
+- 每次功能或界面修改完成后，重新打包、安装 VSIX，并重载 VS Code 窗口，不只交付源码。
 - 涉及读取时覆盖压缩、跨批次、空表、边界、取消及隐藏后恢复；不能只测未压缩小文件。
 - 部分 arf 调用遇到 R 错误仍返回零退出码，须检查错误输出和测试成功标记。
 - 打包后确认 JS、CSS、R 脚本齐全；版本修改同步 `package.json` 和 `package-lock.json`。

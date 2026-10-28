@@ -86,6 +86,7 @@ export class RReader extends FilePager {
   choices: string[] = [];
   selected = '';
   bytes = 0;
+  spatial?: { geometry: string; crs: string; types: string };
   private arrow?: ArrowFileReader;
   private cleanup?: () => Promise<void>;
   private dir = '';
@@ -101,7 +102,7 @@ export class RReader extends FilePager {
     this.filtered = /\.(arrow|feather)$/i.test(path) && !!options.filter?.trim();
     this.ranged = !this.fst && options.paged === true;
     // CSV 仍走原有磁盘转换/行区间路径，不把大文本整表常驻冒充分页。
-    this.cacheKey = options.server && (this.filtered || /\.(rds|rda|rdata|qs2|qdata|xlsx)$/i.test(path)) ? randomUUID() : '';
+    this.cacheKey = options.server && (this.filtered || /\.(rds|rda|rdata|qs2|qdata|xlsx|shp|gpkg)$/i.test(path)) ? randomUUID() : '';
   }
 
   static async open(path: string, options: ROptions): Promise<RReader> {
@@ -119,6 +120,13 @@ export class RReader extends FilePager {
       const names = (await readFile(file.path + '.names', 'utf8')).trimEnd().split('\n').map(name => Buffer.from(name, 'hex').toString('utf8'));
       reader.selected = names.shift() ?? '';
       reader.choices = names;
+      if (/\.(shp|gpkg)$/i.test(path)) {
+        const fields = await readFile(file.path + '.spatial', 'utf8').catch(() => '');
+        if (fields) {
+          const [geometry, crs, types] = fields.trimEnd().split('\n').map(value => Buffer.from(value, 'hex').toString('utf8'));
+          reader.spatial = { geometry, crs, types: types ?? '' };
+        }
+      }
       reader.options = { ...options, selected: reader.selected };
       reader.bytes = reader.cacheKey ? Number(await readFile(file.path + '.bytes', 'utf8')) : (await stat(file.path)).size;
       if (await fileStamp(path) !== before) throw new Error('File changed during R conversion. Reopen the editor.');

@@ -12,6 +12,7 @@ export interface InitPayload {
   choices: string[];
   selected: string;
   dplyrFilter?: string;
+  spatial?: { geometry: string; crs: string; types: string };
 }
 
 export type HostMessage =

@@ -1,6 +1,6 @@
 import { beforeAll, afterAll, afterEach, describe, expect, it } from 'vitest';
 import { execFile } from 'node:child_process';
-import { mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, rm, stat, utimes, writeFile } from 'node:fs/promises';
 import { promisify } from 'node:util';
 import { tmpdir } from 'node:os';
 import { join, resolve, dirname } from 'node:path';
@@ -28,6 +28,29 @@ describe.skipIf(!executable)('R formats (set RDATA_TEST_R to run)', () => {
   });
   afterEach(async () => { await Promise.all(readers.map(reader => reader.dispose())); readers = []; });
   afterAll(async () => { disposeRWorker(); if (dir) await rm(dir, { recursive: true, force: true }); });
+
+  it('reads spatial layers, geometry summaries, empty layers and exports attributes', async context => {
+    if (!(await readdir(dir)).includes('layers.gpkg')) context.skip(); // sf 未安装时跳过空间格式。
+    const shp = await RReader.open(join(dir, 'points.shp'), served);
+    const gpkg = await RReader.open(join(dir, 'layers.gpkg'), { ...served, selected: 'points' });
+    const empty = await RReader.open(join(dir, 'layers.gpkg'), { ...served, selected: 'empty' });
+    readers.push(shp, gpkg, empty);
+    expect(gpkg.choices).toEqual(['points', 'empty']);
+    await expect(RReader.open(join(dir, 'layers.gpkg'), { ...served, selected: 'missing' })).rejects.toThrow('Unknown object');
+    await expect(RReader.open(join(dir, 'layers.gpkg'), { ...served, signal: AbortSignal.abort() })).rejects.toThrow();
+    expect(gpkg.spatial).toMatchObject({ crs: expect.any(String), types: 'POINT' });
+    expect(await gpkg.readRows(0, 3)).toEqual([[1, 'POINT'], [2, 'POINT'], [3, 'POINT']]);
+    expect(await shp.readRows(1, 2)).toEqual([[2, 'POINT']]);
+    expect(empty.totalRows).toBe(0);
+    await gpkg.suspend();
+    gpkg.resume();
+    expect(await gpkg.readRows(2, 3)).toEqual([[3, 'POINT']]);
+    const output = join(dir, 'spatial.csv');
+    await exportCsv(gpkg, join(dir, 'layers.gpkg'), output, new AbortController().signal, () => {}, undefined, [], gpkg.spatial?.geometry);
+    expect(await readFile(output, 'utf8')).toBe('id\r\n1\r\n2\r\n3\r\n');
+    await utimes(join(dir, 'points.dbf'), new Date(), new Date(Date.now() + 10_000));
+    await expect(shp.readRows(0, 1)).rejects.toThrow('File changed');
+  });
 
   it.each(['rds', 'qs2', 'qdata', 'fst'])('reads %s and releases resources on suspend/dispose', async ext => {
     const reader = await RReader.open(join(dir, 'table.' + ext), options);

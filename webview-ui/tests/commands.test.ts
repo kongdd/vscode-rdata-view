@@ -7,7 +7,7 @@ vi.mock('../src/bridge/readHostRows.js', () => ({
   readHostRows: vi.fn().mockResolvedValue([[1]]), cancelPages: vi.fn(), receivePage: vi.fn(),
 }));
 import Toolbar from '../src/components/Toolbar.svelte';
-import RCommand, { handleCommandKey } from '../src/components/RCommand.svelte';
+import RCommand, { autosizeCommand, handleCommandKey } from '../src/components/RCommand.svelte';
 import { gridStore } from '../src/stores/grid.svelte.js';
 import { uiStore } from '../src/stores/ui.svelte.js';
 import { setupMessageHandler } from '../src/bridge/messageHandler.js';
@@ -48,6 +48,8 @@ describe('R controls', () => {
   it('renders only the code box and execution controls without explanatory messages', () => {
     let html = render(RCommand).body;
     expect(html).toContain('aria-label="R command"');
+    expect(html.match(/<textarea[^>]*>/)?.[0]).toContain('rows="1"');
+    expect(html).toContain('aria-busy="false"');
     expect(html).toContain('aria-keyshortcuts="Meta+Enter Control+Enter Meta+Shift+M Tab"');
     expect(html).toContain('Cmd+Enter / Ctrl+Enter');
     expect(html).toContain('执行 R');
@@ -60,7 +62,26 @@ describe('R controls', () => {
     uiStore.queryRunning = true;
     html = render(RCommand).body;
     expect(html).toContain('取消');
+    expect(html).toContain('aria-busy="true"');
     expect(html.match(/<textarea[^>]*>/)?.[0]).toContain('disabled');
+  });
+
+  it('resizes the command editor with its content and removes the listener on unmount', () => {
+    const input = {
+      style: { height: '' }, scrollHeight: 28,
+      addEventListener: vi.fn(), removeEventListener: vi.fn(),
+    };
+    const action = autosizeCommand(input as unknown as HTMLTextAreaElement);
+    expect(input.style.height).toBe('28px');
+    const resize = input.addEventListener.mock.calls[0][1];
+    input.scrollHeight = 88;
+    resize();
+    expect(input.style.height).toBe('88px');
+    input.scrollHeight = 28;
+    resize();
+    expect(input.style.height).toBe('28px');
+    action.destroy();
+    expect(input.removeEventListener).toHaveBeenCalledWith('input', resize);
   });
 
   it.each([
